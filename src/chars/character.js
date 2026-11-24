@@ -3,7 +3,7 @@ import { buildCharacter } from './rig.js';
 import { Animator, Pose, sampleClip } from './animator.js';
 import { PLAYER_CLIPS, ENEMY_CLIPS, locoPlayer, locoEnemy, locoCalm } from './poses.js';
 import { getToonRamp, clamp } from '../core/util.js';
-import { heightAt } from '../world/terrain.js';
+import { groundAt as heightAt } from '../world/nav.js';
 import { ENV } from '../world/env.js';
 
 /* ---------- verlet ribbons: scarf tails, headband, ponytail ---------- */
@@ -130,7 +130,8 @@ export class Character {
     this.clipT = 0;
     this.clipSpeed = 1;
     this.locoMode = this.isPlayer ? 'armed' : 'enemy';
-    this.loco = { speed: 0, mx: 0, mz: 1, phase: 0, t: 0, seed: SEED++ * 1.7, spear: kind === 'spear' };
+    const spear = this.rig.variant.weapon === 'spear';
+    this.loco = { speed: 0, mx: 0, mz: 1, phase: 0, t: 0, seed: SEED++ * 1.7, spear };
     this.tip = new THREE.Vector3();
     this.base = new THREE.Vector3();
     this.chest = new THREE.Vector3();
@@ -140,7 +141,7 @@ export class Character {
     this.lean = 0; // sideways lie (death)
     this.flash = 0;
     this.dissolve = 0;
-    if (kind === 'spear') this.anim.gripOffset = 0.5;
+    if (spear) this.anim.gripOffset = 0.5;
     scene.add(this.root);
 
     // cloth
@@ -156,10 +157,10 @@ export class Character {
       add(b.head, new THREE.Vector3(-0.03, 0.13, -0.125), { n: 9, seg: 0.085, width: 0.05, taper: 0.7, color: P.scarf, gravity: -5, lift: 1.3, drag: 0.95 }); // headband tails
       add(b.head, new THREE.Vector3(0.03, 0.13, -0.125), { n: 8, seg: 0.08, width: 0.05, taper: 0.7, color: P.scarf, gravity: -5, lift: 1.4, drag: 0.95 });
       add(b.chest, new THREE.Vector3(-0.06, 0.22, -0.11), { n: 9, seg: 0.095, width: 0.11, taper: 0.45, color: P.scarf, gravity: -6, lift: 1.5, drag: 0.94 }); // scarf
-    } else if (kind === 'captain') {
+    } else if (kind === 'captain' || kind === 'lord') {
       add(b.chest, new THREE.Vector3(-0.1, 0.2, -0.13), { n: 9, seg: 0.13, width: 0.24, taper: 0.7, color: P.haori, gravity: -7, lift: 1.4 });
       add(b.chest, new THREE.Vector3(0.1, 0.2, -0.13), { n: 9, seg: 0.13, width: 0.24, taper: 0.7, color: P.haori, gravity: -7, lift: 1.4 });
-    } else if (kind === 'bandit') {
+    } else if (kind === 'bandit' || kind === 'elite' || kind === 'monk') {
       add(b.chest, new THREE.Vector3(0.04, 0.22, -0.11), { n: 7, seg: 0.1, width: 0.11, taper: 0.5, color: P.scarf, gravity: -6, lift: 1.4 });
     }
     this.rig.bones.head.scale.setScalar(this.isPlayer ? 1.16 : 1.08);

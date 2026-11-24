@@ -41,6 +41,9 @@ export const PALETTES = {
   ronin: { skin: '#f3cba8', hair: '#1d1b26', gi: '#2c3f78', trim: '#f1ecdc', haori: '#efe9d8', hakama: '#22283c', obi: '#b8232c', armor: '#1c2030', gold: '#e0b04a', scarf: '#cf2530', sock: '#ebe6dc', sole: '#5a3d28', eye: '#3a2a22' },
   bandit: { skin: '#d9b18f', hair: '#16151a', gi: '#33323c', trim: '#8c8a92', haori: '#2a2930', hakama: '#1d1e25', obi: '#7c2326', armor: '#33262a', gold: '#8f7d57', scarf: '#5b2226', sock: '#2a2a30', sole: '#33261d', eye: '#ff3b2b', straw: '#c8a765' },
   spear: { skin: '#d9b18f', hair: '#16151a', gi: '#3b3340', trim: '#9a94a0', haori: '#2e2a33', hakama: '#22202a', obi: '#8a6a2a', armor: '#2b2e3a', gold: '#b99a4c', scarf: '#3a2a4a', sock: '#2a2a30', sole: '#33261d', eye: '#ff7a2b', straw: '#c8a765' },
+  elite: { skin: '#d2a888', hair: '#101014', gi: '#23242c', trim: '#b22c2c', haori: '#1a1b22', hakama: '#17181e', obi: '#b22c2c', armor: '#3c1519', gold: '#c9a34a', scarf: '#7c1d20', sock: '#1c1c22', sole: '#2a1e18', eye: '#ff5a2b', straw: '#3a3336' },
+  monk: { skin: '#cfa27e', hair: '#101014', gi: '#b9772a', trim: '#e6d6a8', haori: '#2b2622', hakama: '#5a3a22', obi: '#2b2622', armor: '#3a342c', gold: '#d9b150', scarf: '#8a2a1a', sock: '#e6dcc8', sole: '#4a3626', eye: '#9fe8ff', straw: '#c8a765' },
+  lord: { skin: '#c39a7c', hair: '#0c0c10', gi: '#16161c', trim: '#e6bb55', haori: '#5a0f14', hakama: '#101014', obi: '#e6bb55', armor: '#17171d', gold: '#f2cf6a', scarf: '#8e1c22', sock: '#141418', sole: '#22181a', eye: '#ff2a2a', straw: '#c8a765' },
   captain: { skin: '#c9a184', hair: '#101014', gi: '#2a1c22', trim: '#c9a34a', haori: '#3a1216', hakama: '#1c1418', obi: '#c9a34a', armor: '#8e1c22', gold: '#e6bb55', scarf: '#1a1a22', sock: '#1c1c22', sole: '#2a1e18', eye: '#ffd23b', straw: '#c8a765' },
 };
 
@@ -376,6 +379,9 @@ const VARIANTS = {
   bandit: { palette: 'bandit', kote: false, mask: true, hat: 'kasa', scarf: true, weapon: 'katana' },
   spear: { palette: 'spear', kote: true, sode: true, mask: true, hat: 'jingasa', weapon: 'spear' },
   captain: { palette: 'captain', haori: true, kote: true, sode: true, cuirass: true, mask: true, hat: 'kabuto', scarf: true, weapon: 'odachi', scale: 1.2 },
+  elite: { palette: 'elite', kote: true, sode: true, cuirass: true, mask: true, hat: 'jingasa', scarf: true, weapon: 'katana', scale: 1.05 },
+  monk: { palette: 'monk', haori: true, kote: true, mask: true, hat: 'kasa', scarf: true, weapon: 'spear', scale: 1.22 },
+  lord: { palette: 'lord', haori: true, kote: true, sode: true, cuirass: true, mask: true, hat: 'kabuto', scarf: true, weapon: 'odachi', scale: 1.34 },
 };
 
 export function buildCharacter(kind) {

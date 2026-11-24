@@ -1,5 +1,24 @@
 import * as THREE from 'three';
-import { heightAt, WATER_Y, buildCollisionGrid, PLAY } from '../world/terrain.js';
+import { groundAt, waterLevelAt } from '../world/nav.js';
+
+const heightAt = groundAt;
+/** coarse ground mesh round (cx, cz) for debris to land on */
+function buildCollisionGrid(step, range, cx, cz) {
+  const n = Math.floor((range * 2) / step) + 1;
+  const verts = new Float32Array(n * n * 3), idx = new Uint32Array((n - 1) * (n - 1) * 6);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const x = cx - range + i * step, z = cz - range + j * step;
+    verts.set([x, Math.max(groundAt(x, z), waterLevelAt(x, z) - 0.35), z], (j * n + i) * 3);
+  }
+  let o = 0;
+  for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
+    const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+    idx.set([a, c, b, b, c, d], o);
+    o += 6;
+  }
+  return { verts, idx };
+}
+const WATER_Y = 0;
 
 /* Rapier drives character-vs-obstacle collision (kinematic character controllers) and
    rigid-body debris (dropped hats, weapons, cut straw). If WebAssembly is unavailable the
@@ -29,10 +48,34 @@ function rapierBackend(R, colliders) {
     const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(c.x, y + 1.5, c.z));
     world.createCollider(R.ColliderDesc.cylinder(2.5, c.r).setCollisionGroups(groups(GROUP_OBSTACLE, 0xffff)), body);
   }
-  // coarse ground mesh for debris to land on
-  const grid = buildCollisionGrid(2, 44);
-  const ground = world.createRigidBody(R.RigidBodyDesc.fixed());
-  world.createCollider(R.ColliderDesc.trimesh(grid.verts, grid.idx).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_DEBRIS)).setFriction(0.9), ground);
+  // coarse ground mesh for debris to land on: rebuilt around the player as the journey moves on
+  let ground = null, gx = 1e9, gz = 1e9;
+  function recenter(x, z) {
+    if (Math.abs(x - gx) < 22 && Math.abs(z - gz) < 22) return;
+    gx = x; gz = z;
+    if (ground) world.removeRigidBody(ground);
+    const grid = buildCollisionGrid(2, 46, Math.round(x / 2) * 2, Math.round(z / 2) * 2);
+    ground = world.createRigidBody(R.RigidBodyDesc.fixed());
+    world.createCollider(R.ColliderDesc.trimesh(grid.verts, grid.idx).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_DEBRIS)).setFriction(0.9), ground);
+  }
+  recenter(-9, 5);
+  /** solid footprints of a streamed zone: circles become cylinders, boxes cuboids. returns a token for removeStatics */
+  function addStatics(list) {
+    const bodies = [];
+    for (const c of list) {
+      const y = heightAt(c.x, c.z);
+      const desc = R.RigidBodyDesc.fixed().setTranslation(c.x, y + 1.5, c.z);
+      if (c.r === undefined) desc.setRotation({ x: 0, y: Math.sin((c.rot || 0) / 2), z: 0, w: Math.cos((c.rot || 0) / 2) });
+      const body = world.createRigidBody(desc);
+      const shape = c.r !== undefined ? R.ColliderDesc.cylinder(3.5, c.r) : R.ColliderDesc.cuboid(c.w / 2, 3.5, c.d / 2);
+      world.createCollider(shape.setCollisionGroups(groups(GROUP_OBSTACLE, 0xffff)), body);
+      bodies.push(body);
+    }
+    return bodies;
+  }
+  function removeStatics(bodies) {
+    for (const b of bodies) world.removeRigidBody(b);
+  }
 
   const controller = world.createCharacterController(0.03);
   controller.setSlideEnabled(true);
@@ -106,10 +149,13 @@ function rapierBackend(R, colliders) {
   function clearDebris() {
     while (debris.length) expire(debris[0]);
   }
-  return { name: 'Rapier', createCharacter, moveCharacter, teleport, removeCharacter, spawnDebris, step, clearDebris };
+  return { name: 'Rapier', createCharacter, moveCharacter, teleport, removeCharacter, spawnDebris, step, clearDebris, addStatics, removeStatics, recenter };
 }
 
-function fallbackBackend(colliders) {
+function fallbackBackend(base) {
+  const sets = new Set();
+  const colliders = [...base];
+  const rebuild = () => { colliders.length = 0; colliders.push(...base); for (const l of sets) colliders.push(...l); };
   const debris = [];
   const q = new THREE.Quaternion(), e = new THREE.Euler();
   return {
@@ -119,6 +165,18 @@ function fallbackBackend(colliders) {
       pos.x += dx;
       pos.z += dz;
       for (const c of colliders) {
+        if (c.r === undefined) {
+          // oriented box: push out along the shallowest axis
+          const cs = Math.cos(c.rot || 0), sn = Math.sin(c.rot || 0), dx = pos.x - c.x, dz = pos.z - c.z;
+          const lx = dx * cs - dz * sn, lz = dx * sn + dz * cs, ex = c.w / 2 + h.radius, ez = c.d / 2 + h.radius;
+          if (Math.abs(lx) < ex && Math.abs(lz) < ez) {
+            let nx = lx, nz = lz;
+            if (ex - Math.abs(lx) < ez - Math.abs(lz)) nx = Math.sign(lx || 1) * ex; else nz = Math.sign(lz || 1) * ez;
+            pos.x = c.x + nx * cs + nz * sn;
+            pos.z = c.z - nx * sn + nz * cs;
+          }
+          continue;
+        }
         const ox = pos.x - c.x, oz = pos.z - c.z, min = c.r + h.radius;
         const d2 = ox * ox + oz * oz;
         if (d2 < min * min && d2 > 1e-6) {
@@ -161,6 +219,8 @@ function fallbackBackend(colliders) {
       for (const d of debris) d.mesh.parent?.remove(d.mesh);
       debris.length = 0;
     },
+    addStatics(list) { sets.add(list); rebuild(); return list; },
+    removeStatics(list) { sets.delete(list); rebuild(); },
+    recenter() {},
   };
 }
-export { PLAY };

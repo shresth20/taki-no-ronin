@@ -300,7 +300,37 @@ export const sharedUniforms = {
   uPlayerPos: { value: new THREE.Vector3() },
   uNoise: { value: null },
   uPaint: { value: null },
+  uOcc: { value: new THREE.Vector4(0, 0, 0, 0) }, // player on screen (ndc x, y), camera distance, cut-away radius (0 = off)
+  uRes: { value: new THREE.Vector2(1, 1) },
 };
+/** GLSL: dithered cut-away of whatever stands between the camera and the player (needs vWPos) */
+export const GLSL_OCC = `
+  if (uOcc.w > 0.0) {
+    vec2 sp = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
+    vec2 dv = sp - uOcc.xy; dv.x *= uRes.x / uRes.y;
+    float cut = smoothstep(uOcc.w, uOcc.w * 0.42, length(dv)) * step(distance(cameraPosition, vWPos), uOcc.z - 1.1) * step(uPlayerPos.y + 0.25, vWPos.y);
+    float dn = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    if (cut * 1.08 > dn + 0.06) discard;
+  }
+`;
+/** GLSL: canopy cut for forests seen from above. Anything that would hide the ground within a few metres of the player
+    (found by following the view ray down to the player's level) is dithered away, so trees and bamboo open around you. */
+export const GLSL_CANOPY = `
+  {
+    float dc = distance(cameraPosition, vWPos);
+    float cut = 0.0;
+    if (uOcc.w > 0.0) {
+      vec3 vd = normalize(vWPos - cameraPosition);
+      float tHit = (uPlayerPos.y + 0.6 - vWPos.y) / min(vd.y, -0.05);
+      vec2 hit = vWPos.xz + vd.xz * max(tHit, 0.0);
+      vec2 fwd = normalize(uPlayerPos.xz - cameraPosition.xz);
+      cut = smoothstep(CANOPY_R, CANOPY_R * 0.6, distance(hit, uPlayerPos.xz + fwd * CANOPY_R * 0.3)) * step(uPlayerPos.y + 1.3, vWPos.y) * step(dc, uOcc.z + CANOPY_R);
+      cut = max(cut, smoothstep(7.5, 4.5, dc));   // nothing leafy right in front of the lens
+    } else cut = smoothstep(4.0, 2.2, dc);        // cinematics: only what would crowd the lens
+    float dn = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    if (cut * 1.08 > dn + 0.06) discard;
+  }
+`;
 export function patchMaterial(mat, opts) {
   const key = opts.key || Math.random().toString(36);
   mat.customProgramCacheKey = () => key;
@@ -310,8 +340,10 @@ export function patchMaterial(mat, opts) {
     shader.uniforms.uPlayerPos = sharedUniforms.uPlayerPos;
     shader.uniforms.uNoise = sharedUniforms.uNoise;
     shader.uniforms.uPaint = sharedUniforms.uPaint;
+    shader.uniforms.uOcc = sharedUniforms.uOcc;
+    shader.uniforms.uRes = sharedUniforms.uRes;
     if (opts.uniforms) Object.assign(shader.uniforms, opts.uniforms);
-    const common = 'uniform float uTime;\nuniform vec4 uWind;\nuniform vec3 uPlayerPos;\nuniform sampler2D uNoise;\nuniform sampler2D uPaint;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n';
+    const common = 'uniform float uTime;\nuniform vec4 uWind;\nuniform vec3 uPlayerPos;\nuniform sampler2D uNoise;\nuniform sampler2D uPaint;\nuniform vec4 uOcc;\nuniform vec2 uRes;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n';
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n' + common + (opts.vHead || ''))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + (opts.vBegin || ''))
@@ -330,6 +362,7 @@ export function patchMaterial(mat, opts) {
       );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\n' + common + (opts.fHead || ''))
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + (opts.occlude === 'canopy' ? '#define CANOPY_R ' + (opts.canopyR || 7.5).toFixed(1) + '\n' + GLSL_CANOPY : opts.occlude ? GLSL_OCC : ''))
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + (opts.fColor || ''))
       .replace('#include <dithering_fragment>', (opts.fEnd || '') + '\n#include <dithering_fragment>');
     mat.userData.shader = shader;

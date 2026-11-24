@@ -72,6 +72,7 @@ export function createAudio() {
     amb.falls = bed('lowpass', 900, 0.4, 0.0);
     amb.river = bed('bandpass', 1900, 0.7, 0.0);
     amb.wind = bed('bandpass', 420, 1.1, 0.0);
+    amb.fire = bed('bandpass', 1500, 0.6, 0.0);
     started = true;
     nextNote = ctx.currentTime + 0.4;
     return true;
@@ -210,27 +211,29 @@ export function createAudio() {
     gong() { for (const [f, g] of [[98, 0.5], [147, 0.3], [196.5, 0.22], [311, 0.12]]) tone(f, 4, { gain: g * 0.6, type: 'sine', bus: musicBus }); noise(1.2, { type: 'lowpass', f0: 1200, f1: 200, gain: 0.3, bus: musicBus }); },
     birds() { for (let i = 0; i < 14; i++) noise(0.1, { f0: 1200, f1: 2600, q: 2, gain: 0.12, attack: 0.02, rate: rrange(0.8, 1.6) }), tone(rrange(1800, 3600), 0.12, { gain: 0.04, when: i * 0.07 + rand() * 0.05, f1: rrange(2400, 4800) }); },
     wave() { taiko(0, 0.7, true); taiko(0.18, 0.5, false); taiko(0.36, 0.8, true); },
+    gate(open = true) { noise(0.9, { type: 'lowpass', f0: open ? 260 : 420, f1: 90, gain: 0.5, attack: 0.05 }); tone(open ? 70 : 55, 0.7, { gain: 0.5, f1: 38 }); tone(520, 0.12, { type: 'square', gain: 0.05, when: 0.7 }); },
   };
   const safe = {};
   for (const k in sfx) safe[k] = (...a) => { if (ctx && enabled && ctx.state === 'running') try { sfx[k](...a); } catch { /* audio is best-effort */ } };
 
   let chirp = 2;
-  function update(rdt, listener) {
+  function update(rdt, listener, env = { falls: 1, river: 1, wind: 0.07, birds: 1, fire: 0, mix0: 1, water: 9 }) {
     if (!ctx || !started) return;
     if (ctx.state !== 'running' || !enabled) return;
     schedule();
-    // ambience follows the listener and the mood
+    // ambience follows the listener, the zone they stand in and the mood
     const t = now();
     const dFalls = listener ? Math.hypot(listener.x, listener.z + 44) : 40;
-    const dRiver = listener ? Math.abs(listener.x - 8) : 10;
-    amb.falls.g.gain.setTargetAtTime(clamp(0.5 * (22 / (dFalls + 14)), 0.05, 0.5), t, 0.3);
-    amb.river.g.gain.setTargetAtTime(clamp(0.11 * (9 / (dRiver + 6)), 0.01, 0.11), t, 0.3);
-    const wind = G.mood > 0.5 && G.mood < 1.5 ? 0.2 : 0.07;
+    const falls = clamp(0.5 * (22 / (dFalls + 14)), 0.05, 0.5) * env.mix0 + Math.max(0, env.falls - env.mix0) * 0.16;
+    amb.falls.g.gain.setTargetAtTime(clamp(falls, 0, 0.5), t, 0.3);
+    amb.river.g.gain.setTargetAtTime(clamp(0.11 * env.river * (9 / (env.water + 6)), 0.0, 0.11), t, 0.3);
+    const wind = env.wind + (G.mood > 0.5 && G.mood < 1.5 ? 0.13 : 0);
     amb.wind.g.gain.setTargetAtTime(wind * (0.7 + 0.3 * Math.sin(G.real * 0.7)), t, 0.5);
     amb.wind.f.frequency.setTargetAtTime(380 + 160 * Math.sin(G.real * 0.31), t, 0.5);
+    amb.fire.g.gain.setTargetAtTime(env.fire * 0.035 * (0.7 + 0.3 * Math.sin(G.real * 9.1) * Math.sin(G.real * 3.7)), t, 0.2);
     // birdsong while the valley is calm
     chirp -= rdt;
-    if (chirp < 0 && (G.mood < 0.4 || G.mood > 1.7)) {
+    if (chirp < 0 && env.birds > 0.25 && (G.mood < 0.4 || G.mood > 1.7)) {
       chirp = rrange(1.5, 5);
       const base = rrange(2200, 3800), n = 2 + Math.floor(rand() * 4);
       for (let i = 0; i < n; i++) tone(base * rrange(0.9, 1.2), 0.09, { gain: 0.035, when: i * 0.11, f1: base * rrange(1.1, 1.5), bus: ambBus });

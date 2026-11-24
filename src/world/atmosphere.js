@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { envUniforms, ENV, GLSL_FOG } from './env.js';
 import { mulberry32, getPetalTexture, getLeafTexture, lerp, damp } from '../core/util.js';
 import { heightAt, ARENA, FALLS, POOL } from './terrain.js';
+import { terrainAt } from './nav.js';
 
 /* ---------- drifting petals / leaves: GPU-animated, wrapped in a box that follows the camera ---------- */
 export function createPetals(count, { leaf = false } = {}) {
@@ -205,7 +206,7 @@ export function createShafts() {
   });
   const shafts = spots.map(([x, z, w]) => {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
-    m.userData = { x, z, w: w * (0.8 + rnd() * 0.5), len: 34 + rnd() * 10 };
+    m.userData = { x, z, w: w * (0.8 + rnd() * 0.5), len: 34 + rnd() * 10, k: 0.8 + rnd() * 0.5, l: 34 + rnd() * 10 };
     m.frustumCulled = false;
     m.matrixAutoUpdate = false;
     m.layers.set(1);
@@ -219,7 +220,7 @@ export function createShafts() {
     up.copy(ENV.sunDir);
     for (const m of shafts) {
       const u = m.userData;
-      base.set(u.x, heightAt(u.x, u.z) - 1, u.z);
+      base.set(u.x, terrainAt(u.x, u.z) - 1, u.z);
       toCam.subVectors(camera.position, base);
       side.crossVectors(up, toCam).normalize();
       fwd.crossVectors(side, up).normalize();
@@ -229,7 +230,15 @@ export function createShafts() {
       m.matrixWorldNeedsUpdate = true;
     }
   }
-  return { group, update };
+  /** move the pool of shafts to a new set of [x, z, width] spots (each zone lists its own) */
+  function setSpots(list) {
+    shafts.forEach((m, i) => {
+      const sp = list[i];
+      m.visible = !!sp;
+      if (sp) { m.userData.x = sp[0]; m.userData.z = sp[1]; m.userData.w = sp[2] * m.userData.k; }
+    });
+  }
+  return { group, update, setSpots, defaults: spots };
 }
 
 /* ---------- anime wind lines: thin ribbons with a bright dash that runs along them ---------- */

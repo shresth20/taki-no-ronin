@@ -12,11 +12,12 @@ const ROCK_FRAG = `
   rock *= mix(0.55, 1.0, smoothstep(-0.05, 0.45, vWPos.y));
   diffuseColor.rgb = rock;
 `;
+let _rockMat = null;
 export function rockMaterial() {
-  return patchMaterial(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: getToonRamp('soft') }), { key: 'rock', fHead: GLSL_PAINT, fColor: ROCK_FRAG });
+  return (_rockMat ??= patchMaterial(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: getToonRamp('soft') }), { key: 'rock', occlude: true, fHead: GLSL_PAINT, fColor: ROCK_FRAG }));
 }
 
-function rockGeometry(seed, detail = 2) {
+export function rockGeometry(seed, detail = 2) {
   const g = new THREE.IcosahedronGeometry(1, detail);
   const p = g.attributes.position;
   const o = seed * 13.7;

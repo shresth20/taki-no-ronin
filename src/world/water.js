@@ -227,15 +227,12 @@ function fallGeometry(x, width, yTop, yBase, zLip, zBase, run = 6) {
   return g;
 }
 
-export function createWaterfall() {
-  const group = new THREE.Group();
-  group.name = 'waterfall';
-  const fallMat = (speed, alpha, streak) =>
+export const fallMaterial = (speed, alpha, streak, len = 1) =>
     new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide,
-      uniforms: { ...envUniforms, uSpeed: { value: speed }, uAlpha: { value: alpha }, uStreak: { value: streak }, uLen: { value: 1 } },
+      uniforms: { ...envUniforms, uSpeed: { value: speed }, uAlpha: { value: alpha }, uStreak: { value: streak }, uLen: { value: len } },
       vertexShader: /* glsl */ `
         varying vec2 vUv; varying vec3 vW;
         void main(){ vUv = uv; vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
@@ -267,6 +264,12 @@ export function createWaterfall() {
           gl_FragColor = vec4(applyFog(col, vW), al);
         }`,
     });
+export { fallGeometry };
+
+export function createWaterfall() {
+  const group = new THREE.Group();
+  group.name = 'waterfall';
+  const fallMat = fallMaterial;
   const add = (x, width, yTop, zOff, speed, alpha, streak, len) => {
     const cz = cliffZ(x);
     const m = new THREE.Mesh(fallGeometry(x, width, yTop, WATER_Y - 0.1, cz - 4.2 + zOff, cz - 0.6 + zOff, 6), fallMat(speed, alpha, streak));

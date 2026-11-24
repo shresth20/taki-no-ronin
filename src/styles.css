@@ -181,3 +181,88 @@ kbd { font-family: var(--font-ui); font-size: 0.76rem; font-weight: 700; padding
   .title-main, .caption, .combo, .toast, .result, .sheet { animation-duration: 0.01s; }
   .bar.ki.full, .b-special.ready { animation: none; }
 }
+
+/* ---------- the road: zone card, objective, map button ---------- */
+.btn-ghost.big { font-family: var(--font-display); font-size: 1.05rem; letter-spacing: 0.08em; text-transform: none; color: var(--paper); }
+.zonecard { position: absolute; left: 50%; top: calc(var(--gt) + clamp(64px, 17vh, 150px)); transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; text-align: center; pointer-events: none; animation: zc 4.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.zc-kanji { font-family: var(--font-display); font-size: clamp(2.6rem, 11vh, 5.4rem); line-height: 1; color: var(--paper); text-shadow: 0 0 30px rgba(8, 11, 17, 0.75), 3px 3px 0 var(--vermilion); letter-spacing: 0.08em; }
+.zc-name { margin-top: 8px; padding: 0 1.2em 0.45em; font-size: 0.92rem; font-weight: 700; letter-spacing: 0.34em; text-transform: uppercase; color: var(--paper); border-bottom: 2px solid var(--gold); text-shadow: 0 1px 12px rgba(8, 11, 17, 0.95); }
+.zc-sub { font-family: var(--font-display); font-size: 1rem; color: var(--paper-dim); text-shadow: 0 1px 10px rgba(8, 11, 17, 0.95); }
+@keyframes zc { 0% { opacity: 0; transform: translate(-50%, 14px); } 12%, 82% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -8px); } }
+.objective { position: absolute; left: var(--gl); top: calc(var(--gt) + 84px); margin: 0; display: flex; align-items: baseline; gap: 10px; max-width: min(70vw, 28rem); font-size: 0.84rem; line-height: 1.35; color: var(--paper); text-shadow: 0 1px 8px rgba(8, 11, 17, 0.95), 0 0 2px rgba(8, 11, 17, 0.9); }
+.objective span { flex: none; font-family: var(--font-display); font-size: 0.82rem; color: var(--ink); background: var(--gold); padding: 0.1em 0.45em 0.16em; }
+.icon-btn.map-btn { font-family: var(--font-display); font-size: 1.15rem; line-height: 1; color: var(--paper); display: grid; place-items: center; }
+
+/* ---------- journey map ---------- */
+.sheet.map { display: flex; justify-content: center; align-items: stretch; background: rgba(6, 8, 13, 0.82); padding: calc(var(--gt) + 10px) var(--gr) calc(var(--gb) + 10px) var(--gl); pointer-events: auto; }
+.map-frame { flex: 1 1 auto; width: 100%; max-width: 60rem; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.map-head { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.map-head > div { min-width: 0; flex: 1; }
+.map-kanji { font-family: var(--font-display); font-size: clamp(1.5rem, 5vh, 2.4rem); color: var(--paper); text-shadow: 2px 2px 0 var(--vermilion); flex: none; }
+.map-head h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(1rem, 2.6vw, 1.35rem); letter-spacing: 0.04em; }
+.map-head p { margin: 2px 0 0; font-size: 0.82rem; color: var(--paper-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-head kbd { margin-left: 0.5em; padding: 0.05em 0.45em; border: 1px solid rgba(244, 236, 217, 0.4); font: inherit; font-size: 0.72rem; }
+.map-paper { position: relative; min-height: 0; background: #e4d3a6; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px #6b5a3a, 0 0 0 5px #2b2218, 0 0 0 6px #8a744a; }
+/* the painted sheet is nine-sliced: its ink-wash corners keep their shape, only the plain middle stretches */
+.map-paper.inked { --corner: min(26vw, 30vh, 230px); border: 0 solid transparent; border-image-slice: 24% 31% fill; border-image-width: calc(var(--corner) * 0.774) var(--corner); border-image-repeat: stretch; }
+.map-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.mk-paper { fill: #e4d3a6; }
+.mk-water { stroke: #5f8fa0; opacity: 0.85; }
+.mk-water .mk-pond { fill: #5f8fa0; stroke: none; }
+.mk-water .mk-paddy { fill: #86b3b0; stroke: #55807e; stroke-width: 0.6; }
+.mk-ground { stroke: #f1e6c4; }
+.mk-shapes { fill: #f1e6c4; stroke: #6b5a3a; stroke-width: 0.7; }
+.mk-decks { stroke: #b4432f; }
+.mk-roof { fill: #4f4338; stroke: #2b2218; stroke-width: 0.5; }
+.mk-wall { stroke: #2b2218; stroke-width: 2; fill: none; }
+.mk-torii { stroke: #c93a2b; stroke-width: 2.2; }
+.mk-gate { stroke: #2b2218; stroke-width: 3; }
+.mk-zone.unseen { opacity: 0.34; }
+.mk-zone.unseen .mk-roof, .mk-zone.unseen .mk-wall { opacity: 0.5; }
+.mk-route { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.mk-route.done { stroke: #c9962e; stroke-width: 2.4; }
+.mk-route.now { stroke: #c9962e; stroke-width: 2; stroke-dasharray: 5 4; }
+.mk-route.ahead { stroke: #6b5a3a; stroke-width: 1.4; stroke-dasharray: 1.5 5; opacity: 0.7; }
+.mk-route-glow { fill: none; stroke: #ffd86a; stroke-width: 6; opacity: 0.55; stroke-linecap: round; stroke-linejoin: round; }
+.mk-ico { fill: none; stroke: #3a2d1c; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; opacity: 0.8; }
+.mk-lamp circle { fill: #e4d3a6; stroke: #5a4a30; stroke-width: 1; }
+.mk-lamp .core { fill: #5a4a30; stroke: none; }
+.mk-lamp.lit circle { fill: #bff1f0; stroke: #2f7f86; }
+.mk-lamp.lit .core { fill: #2f7f86; }
+.mk-lamp.here circle:first-child { stroke-width: 2; animation: lamp 1.6s ease-in-out infinite; }
+@keyframes lamp { 50% { stroke: #ffffff; } }
+.mk-boss rect { fill: #b3301f; stroke: #5c160d; stroke-width: 0.8; }
+.mk-boss text { font-family: var(--font-display); font-size: 10px; fill: #f4ecd9; }
+.mk-boss.slain rect { fill: #7d735c; stroke: #4a4333; }
+.mk-label .k { font-family: var(--font-display); font-size: 17px; fill: #2b2218; }
+.mk-label .n { font-family: var(--font-ui); font-size: 7.4px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; fill: #5a4a30; }
+.mk-label:not(.seen) { opacity: 0.45; }
+.mk-label.here .k { fill: #a1291b; }
+.mk-seal circle { fill: #c9962e; stroke: #7a5a16; stroke-width: 0.8; }
+.mk-seal path { fill: none; stroke: #2b2218; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.mk-start circle { fill: none; stroke: #2b2218; stroke-width: 1.4; }
+.mk-you path { fill: #dc3f2b; stroke: #fff6e6; stroke-width: 1.3; stroke-linejoin: round; }
+.mk-you .pulse { fill: none; stroke: #dc3f2b; stroke-width: 1.6; transform-origin: center; transform-box: fill-box; animation: you 1.5s ease-out infinite; }
+@keyframes you { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.7); opacity: 0; } }
+.mk-compass path { fill: #3a2d1c; }
+.mk-compass text { font-family: var(--font-ui); font-size: 8px; font-weight: 700; fill: #3a2d1c; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 0.74rem; color: var(--paper-dim); }
+.map-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.lg { display: inline-block; inline-size: 12px; block-size: 12px; }
+.lg-you { background: var(--vermilion); clip-path: polygon(50% 0, 100% 100%, 50% 76%, 0 100%); }
+.lg-lamp { border-radius: 50%; background: #bff1f0; box-shadow: inset 0 0 0 2px #2f7f86; }
+.lg-boss { background: #b3301f; transform: rotate(8deg); }
+.lg-route { block-size: 3px; inline-size: 20px; background: #c9962e; }
+.lg-ahead { block-size: 0; inline-size: 20px; border-top: 2px dotted #a8966e; }
+.lg-bridge { block-size: 4px; inline-size: 20px; background: #b4432f; }
+
+/* ---------- developer overlay ---------- */
+.dbg { position: absolute; right: var(--gr); bottom: calc(var(--gb) + 12px); width: 262px; padding: 6px; background: rgba(8, 10, 16, 0.86); border: 1px solid rgba(244, 236, 217, 0.3); font: 11px/1.35 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color: #dfe6ee; pointer-events: auto; z-index: 30; }
+.dbg canvas { display: block; width: 250px; height: 250px; image-rendering: pixelated; }
+.dbg pre { margin: 6px 0; white-space: pre-wrap; font: inherit; }
+.dbg p { margin: 4px 0 0; color: #8f99a8; font-size: 10px; }
+.dbg-row { display: flex; flex-wrap: wrap; gap: 3px; }
+.dbg-row button { padding: 3px 5px; border: 1px solid rgba(244, 236, 217, 0.35); font: inherit; color: #ffe9a8; }
+.dbg-row button:hover { background: rgba(244, 236, 217, 0.14); }
+@media (max-width: 560px) { .zc-name { letter-spacing: 0.2em; font-size: 0.8rem; } .objective { top: calc(var(--gt) + 76px); font-size: 0.78rem; } .map-legend { font-size: 0.68rem; gap: 3px 12px; } }
+@media (max-height: 460px) { .zonecard { top: calc(var(--gt) + 46px); } .zc-kanji { font-size: 2.3rem; } .map-legend { display: none; } }

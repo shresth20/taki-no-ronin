@@ -27,6 +27,8 @@ export const RIVER = [];
   }
 }
 const PATH_CTRL = [[-17, 36], [-15, 24], [-11, 12], [-6, 2], [-2.5, -5]];
+// the gorge trail added for the journey south (vegetation keeps clear of it; the ground itself is shaped in world/nav.js)
+const TRAIL_CTRL = [[-15.8, 29.5], [-15, 39], [-12, 49], [-9.6, 60], [-8.4, 70], [-7.4, 80], [-4.6, 86], [-2.9, 95], [-2.2, 104], [-1.7, 111], [-1.4, 118], [16.2, 119.2], [17.6, 126], [18.6, 134]];
 
 export function riverNearest(x, z) {
   let best = 1e9, bi = 0;
@@ -43,10 +45,10 @@ export const cliffZ = (x) => -47 + 0.0062 * x * x + (fbm(x * 0.05, 3.7, 3) - 0.5
 FALLS.zLip = cliffZ(FALLS.x) - 4.2; // where the water leaves the plateau
 FALLS.zBase = cliffZ(FALLS.x) - 0.6; // where it meets the pool
 
-function distToPath(x, z) {
+function distToPath(x, z, ctrl = PATH_CTRL) {
   let best = 1e9;
-  for (let i = 0; i < PATH_CTRL.length - 1; i++) {
-    const [ax, az] = PATH_CTRL[i], [bx, bz] = PATH_CTRL[i + 1];
+  for (let i = 0; i < ctrl.length - 1; i++) {
+    const [ax, az] = ctrl[i], [bx, bz] = ctrl[i + 1];
     const vx = bx - ax, vz = bz - az;
     const t = clamp(((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz), 0, 1);
     const d = Math.hypot(x - ax - vx * t, z - az - vz * t);
@@ -100,7 +102,11 @@ function sample(grid, x, z) {
   const a = grid[iz * N + ix], b = grid[iz * N + ix + 1], c = grid[(iz + 1) * N + ix], d = grid[(iz + 1) * N + ix + 1];
   return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
 }
-export const heightAt = (x, z) => sample(H, x, z);
+/** the valley exactly as it was first built (zone 00's own heightfield) */
+export const legacyHeightAt = (x, z) => sample(H, x, z);
+/** final ground height. The navigation module swaps in the stitched six-zone world (see world/nav.js). */
+export let heightAt = legacyHeightAt;
+export function setHeightProvider(fn) { heightAt = fn; }
 export const riverDistAt = (x, z) => sample(RD, x, z);
 export const waterDepthAt = (x, z) => WATER_Y - heightAt(x, z);
 export function slopeAt(x, z) {
@@ -109,7 +115,9 @@ export function slopeAt(x, z) {
   return Math.hypot(dx, dz) / (2 * e);
 }
 export const inArena = (x, z, pad = 0) => Math.hypot(x - ARENA.x, z - ARENA.z) < ARENA.r + pad;
-export const pathDist = distToPath;
+export const legacyPathDist = (x, z) => distToPath(x, z);
+export const trailDist = (x, z) => Math.min(distToPath(x, z, TRAIL_CTRL) - 1.2, Math.hypot(x + 15.5, z - 55.5) - 3.5);
+export const pathDist = (x, z) => Math.min(distToPath(x, z), distToPath(x, z, TRAIL_CTRL) - 1.2, Math.hypot(x + 15.5, z - 55.5) - 3.5);
 
 /* ---------- terrain mesh ---------- */
 export function buildTerrainGeometry() {
@@ -131,7 +139,7 @@ export function buildTerrainGeometry() {
     c.lerp(gold, smoothstep(0.56, 0.72, n2) * 0.75);
     const ac = Math.hypot(x - ARENA.x, z - ARENA.z);
     c.lerp(forest, smoothstep(ARENA.r + 2, ARENA.r + 14, ac) * 0.75);
-    c.lerp(dirt, (1 - smoothstep(0.7, 2.0, distToPath(x, z) + (n1 - 0.5) * 1.5)) * 0.8);
+    c.lerp(dirt, (1 - smoothstep(0.7, 2.0, Math.min(distToPath(x, z), distToPath(x, z, TRAIL_CTRL) - 0.6, Math.hypot(x + 15.5, z - 55.5) - 3.6) + (n1 - 0.5) * 1.5)) * 0.8);
     c.lerp(sand, 1 - smoothstep(0.18, 0.55, y + (n1 - 0.5) * 0.25));
     c.lerp(wet, 1 - smoothstep(-0.02, 0.14, y));
     if (y < 0) c.copy(bed).lerp(deep, smoothstep(-0.3, -2.2, y)).multiplyScalar(0.92 + n1 * 0.2);

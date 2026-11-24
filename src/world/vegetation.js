@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { mulberry32, getToonRamp, sharedUniforms, patchMaterial, GLSL_PAINT, mergeColored, fbm, smoothstep, lerp, clamp } from '../core/util.js';
-import { heightAt, slopeAt, riverDistAt, riverHalfWidth, cliffZ, ARENA, pathDist, inArena, PLAY } from './terrain.js';
+import { mulberry32, getToonRamp, sharedUniforms, patchMaterial, GLSL_PAINT, GLSL_CANOPY, mergeColored, fbm, smoothstep, lerp, clamp } from '../core/util.js';
+import { heightAt, slopeAt, riverDistAt, riverHalfWidth, cliffZ, ARENA, pathDist, legacyPathDist, trailDist, inArena, PLAY } from './terrain.js';
 
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -59,14 +59,20 @@ function clusterTexture(kind) {
 }
 
 /* ---------- "fluffy" foliage: camera-facing cards with spherical normals ---------- */
-function fluffMaterial(map, { emissive = 0x000000, sway = 1, flutter = 0.25 } = {}) {
+function fluffMaterial(map, { emissive = 0x000000, sway = 1, flutter = 0.25, canopyR = 7 } = {}) {
   const mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: getToonRamp('soft'), map, alphaTest: 0.42, emissive, emissiveIntensity: 1 });
-  mat.customProgramCacheKey = () => 'fluff' + sway + flutter;
+  mat.customProgramCacheKey = () => 'fluff' + sway + flutter + canopyR;
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = sharedUniforms.uTime;
     shader.uniforms.uWind = sharedUniforms.uWind;
+    shader.uniforms.uOcc = sharedUniforms.uOcc;
+    shader.uniforms.uPlayerPos = sharedUniforms.uPlayerPos;
+    // foliage that would hide the ground around the player thins out, so the canopy opens wherever you walk
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec4 uOcc; uniform vec3 uPlayerPos; varying vec3 vWPos;\n#define CANOPY_R ' + canopyR.toFixed(1))
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + GLSL_CANOPY);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 aOff;\nuniform float uTime; uniform vec4 uWind;')
+      .replace('#include <common>', '#include <common>\nattribute vec3 aOff;\nuniform float uTime; uniform vec4 uWind; varying vec3 vWPos;')
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
@@ -84,6 +90,7 @@ function fluffMaterial(map, { emissive = 0x000000, sway = 1, flutter = 0.25 } = 
           mvPosition = instanceMatrix * mvPosition;
           fScale = length(instanceMatrix[0].xyz);
         #endif
+        vWPos = (modelMatrix * mvPosition).xyz;
         mvPosition = modelViewMatrix * mvPosition;
         {
           float rot = aOff.z * 6.283 + sin(uTime * (1.1 + aOff.z) + aOff.z * 40.0) * ${flutter.toFixed(2)} * uWind.z;
@@ -216,6 +223,7 @@ const SPECIES = {
   sakura: { trunkH: 2.5, trunkR: 0.36, branches: 3, branchLen: 3.3, up: 0.42, blobR: 1.55, flat: 0.78, cards: 26, cardSize: 1.0, bark: '#4b3936', palette: ['#ffc2d8', '#ff9fc4', '#ffe4ee', '#ffb3cf', '#f786ad'], tex: 'blossom', emissive: 0x4a1f30 },
   maple: { trunkH: 3.0, trunkR: 0.34, branches: 3, branchLen: 3.0, up: 0.55, blobR: 1.5, flat: 0.82, cards: 24, cardSize: 1.0, bark: '#3f3531', palette: ['#f0b83c', '#e8982e', '#f7d35a', '#d97a2a', '#c9c24a'], tex: 'leaf', emissive: 0x3a2608 },
   green: { trunkH: 3.4, trunkR: 0.4, branches: 3, branchLen: 3.4, up: 0.6, blobR: 1.7, flat: 0.85, cards: 24, cardSize: 1.0, bark: '#3b3a33', palette: ['#5fa33f', '#3f8a3c', '#86b84a', '#2f7440', '#a3c552'], tex: 'leaf', emissive: 0x10240c },
+  momiji: { trunkH: 2.7, trunkR: 0.32, branches: 3, branchLen: 3.0, up: 0.5, blobR: 1.5, flat: 0.8, cards: 26, cardSize: 1.0, bark: '#3a2b2a', palette: ['#e2472c', '#f0692c', '#c72f27', '#f58c38', '#a8241f', '#ffb13b'], tex: 'leaf', emissive: 0x3a0e08 },
   pine: { trunkH: 2.6, trunkR: 0.3, branches: 3, branchLen: 2.5, up: 0.12, blobR: 1.35, flat: 0.36, cards: 30, cardSize: 0.85, bark: '#3a2f2c', palette: ['#2f6f4a', '#3f8552', '#24583f', '#56924f'], tex: 'needle', emissive: 0x06160e, twisty: true },
 };
 
@@ -243,7 +251,7 @@ export function createTrees(rocksForPines = []) {
     if (Math.abs(x) > 122 || Math.abs(z) > 122) continue;
     const h = heightAt(x, z);
     if (h < 0.6 || slopeAt(x, z) > 0.75 || z < cliffZ(x) + 5 || riverDistAt(x, z) < riverHalfWidth(z) + 4) continue;
-    if (pathDist(x, z) < 3) continue;
+    if (legacyPathDist(x, z) < 3) continue;
     let ok = true;
     for (const k in spots) for (const s of spots[k]) if ((s.x - x) ** 2 + (s.z - z) ** 2 < 30) ok = false;
     if (!ok) continue;
@@ -251,6 +259,8 @@ export function createTrees(rocksForPines = []) {
     const k = d < 34 ? (pick < 0.55 ? 'sakura' : pick < 0.8 ? 'maple' : 'green') : pick < 0.28 ? 'sakura' : pick < 0.5 ? 'maple' : 'green';
     spots[k].push({ x, z, s: 1.0 + rnd() * 0.55 + (d > 40 ? 0.3 : 0), a: rnd() * 6.28 });
   }
+  // the gorge trail was cut later: clear it without disturbing the rest of the planting
+  for (const k in spots) spots[k] = spots[k].filter((t) => trailDist(t.x, t.z) > 2.6 && !(t.z > 100 && t.z < 131 && t.x > -30 && t.x < 60));
   // trees on the plateau above the falls
   for (let i = 0; i < 26; i++) {
     const x = -85 + rnd() * 170;
@@ -261,22 +271,34 @@ export function createTrees(rocksForPines = []) {
   // pines cling to rocks and ledges
   for (const r of rocksForPines) spots.pine.push({ x: r.x, z: r.z, y: r.y, s: r.s, a: rnd() * 6.28 });
 
-  const trunkMat = patchMaterial(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: getToonRamp('soft') }), {
+  treeSet(spots, rnd, group, colliders, (s) => Math.hypot(s.x - PLAY.x, s.z - PLAY.z) < PLAY.r + 8);
+  return { group, colliders, blossomTrees: spots.sakura };
+}
+
+/* shared tree assets: every zone instances the same few trunks, blobs and leaf cards */
+const _treeGeo = {}, _fluffMat = {};
+let _trunkMat = null, _blobMat = null;
+/** spots: { species: [{x, z, y?, s, a}] } → instanced meshes added to `group` */
+export function treeSet(spots, rnd, group, colliders = null, collide = null) {
+  _trunkMat ??= patchMaterial(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: getToonRamp('soft') }), {
     key: 'trunk',
+    occlude: 'canopy',
+    canopyR: 7,
     fHead: GLSL_PAINT,
     fColor: 'diffuseColor.rgb *= 0.75 + 0.5 * paintTri(vWPos, vWNrm, 0.35);',
   });
-  const blobMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: getToonRamp('soft') });
+  _blobMat ??= patchMaterial(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: getToonRamp('soft') }), { key: 'blob', occlude: 'canopy', canopyR: 7 });
+  const trunkMat = _trunkMat, blobMat = _blobMat;
   const dummy = new THREE.Object3D(), tint = new THREE.Color();
   for (const kind in spots) {
     const sp = SPECIES[kind], list = spots[kind];
-    if (!list.length) continue;
-    const fmat = fluffMaterial(clusterTexture(sp.tex), { emissive: sp.emissive, sway: kind === 'pine' ? 0.5 : 1 });
+    if (!list || !list.length) continue;
+    const fmat = (_fluffMat[kind] ??= fluffMaterial(clusterTexture(sp.tex), { emissive: sp.emissive, sway: kind === 'pine' ? 0.5 : 1 }));
     const variants = kind === 'pine' ? 2 : 3;
     for (let v = 0; v < variants; v++) {
       const sub = list.filter((_, i) => i % variants === v);
       if (!sub.length) continue;
-      const t = genTree(1000 + v * 77 + kind.length * 13, sp);
+      const t = (_treeGeo[kind + v] ??= genTree(1000 + v * 77 + kind.length * 13, sp));
       const mk = (geo, mat, cast) => {
         const im = new THREE.InstancedMesh(geo, mat, sub.length);
         im.castShadow = cast;
@@ -299,12 +321,12 @@ export function createTrees(rocksForPines = []) {
         tint.setRGB(k, 0.92 + rnd() * 0.12, k);
         b.setColorAt(i, tint);
         c.setColorAt(i, tint);
-        if (kind !== 'pine' && Math.hypot(s.x - PLAY.x, s.z - PLAY.z) < PLAY.r + 8) colliders.push({ x: s.x, z: s.z, r: sp.trunkR * s.s * 1.25 });
+        if (colliders && kind !== 'pine' && (!collide || collide(s))) colliders.push({ x: s.x, z: s.z, r: sp.trunkR * s.s * 1.25 });
       });
       group.add(a, b, c);
     }
   }
-  return { group, colliders, blossomTrees: spots.sakura };
+  return group;
 }
 
 /* ---------- bamboo groves ---------- */
@@ -322,6 +344,14 @@ export function createBamboo() {
       stalks.push({ x, z, h: 8 + rnd() * 5, a: rnd() * 6.28, w: 0.8 + rnd() * 0.5 });
     }
   }
+  return bambooSet(stalks, rnd, group);
+}
+
+/* shared bamboo assets */
+let _bamboo = null;
+function bambooAssets() {
+  if (_bamboo) return _bamboo;
+  const rnd = mulberry32(8081);
   const sg = new THREE.CylinderGeometry(0.055, 0.085, 1, 6, 8, true);
   sg.translate(0, 0.5, 0);
   const windLocal = `
@@ -336,14 +366,13 @@ export function createBamboo() {
     }`;
   const stalkMat = patchMaterial(new THREE.MeshToonMaterial({ color: '#8fb04a', gradientMap: getToonRamp('soft') }), {
     key: 'bambooStalk',
+    occlude: 'canopy',
+    canopyR: 13,
     vHead: 'varying float vH;',
     vBegin: 'vH = position.y;\n#define HH position.y\n' + windLocal,
     fHead: 'varying float vH;',
     fColor: 'float node = smoothstep(0.035, 0.0, abs(fract(vH * 13.0) - 0.5)); diffuseColor.rgb *= mix(1.0, 0.55, node) * mix(0.8, 1.12, vH);',
   });
-  const sm = new THREE.InstancedMesh(sg, stalkMat, stalks.length);
-  sm.castShadow = true;
-  sm.frustumCulled = false;
   // leaves: cards in the top half of a unit-height stalk
   const cards = [];
   const lc = ['#7fb043', '#a4c64f', '#5f9a3d', '#c3d05a'].map((h) => new THREE.Color(h));
@@ -353,7 +382,7 @@ export function createBamboo() {
     cards.push({ c, n: V3(c.x, 0.8, c.z).normalize(), size: 1.2 + rnd() * 0.9, color: lc[Math.floor(rnd() * lc.length)] });
   }
   const lg = fluffGeometry(cards, rnd);
-  const leafMat = fluffMaterial(clusterTexture('bamboo'), { emissive: 0x12240a, sway: 0, flutter: 0.35 });
+  const leafMat = fluffMaterial(clusterTexture('bamboo'), { emissive: 0x12240a, sway: 0, flutter: 0.35, canopyR: 13 });
   // leaves must follow the stalk sway: same wind formula on the card centres
   const base = leafMat.onBeforeCompile;
   leafMat.customProgramCacheKey = () => 'bambooLeaf';
@@ -364,11 +393,19 @@ export function createBamboo() {
       .replace('uniform float uTime;', 'uniform float uTime; uniform sampler2D uNoise;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n#define HH position.y\n' + windLocal);
   };
+  return (_bamboo = { sg, stalkMat, lg, leafMat });
+}
+/** stalks: [{x, z, y?, h, a, w}] → instanced stalks + leaves added to `group`. bounds (optional THREE.Sphere) enables culling */
+export function bambooSet(stalks, rnd, group, bounds = null) {
+  const { sg, stalkMat, lg, leafMat } = bambooAssets();
+  const sm = new THREE.InstancedMesh(sg, stalkMat, stalks.length);
+  sm.castShadow = true;
+  sm.frustumCulled = false;
   const lm = new THREE.InstancedMesh(lg, leafMat, stalks.length);
   lm.frustumCulled = false;
   const dummy = new THREE.Object3D();
   stalks.forEach((s, i) => {
-    dummy.position.set(s.x, heightAt(s.x, s.z) - 0.2, s.z);
+    dummy.position.set(s.x, (s.y ?? heightAt(s.x, s.z)) - 0.2, s.z);
     dummy.rotation.set((rnd() - 0.5) * 0.08, s.a, (rnd() - 0.5) * 0.08);
     dummy.scale.set(s.w, s.h, s.w);
     dummy.updateMatrix();
@@ -377,13 +414,15 @@ export function createBamboo() {
     dummy.updateMatrix();
     lm.setMatrixAt(i, dummy.matrix);
   });
+  if (bounds) { sm.frustumCulled = lm.frustumCulled = true; sm.boundingSphere = bounds; lm.boundingSphere = bounds; }
   group.add(sm, lm);
   return group;
 }
 
 /* ---------- grass + wildflowers ---------- */
-export function createGrass(count) {
-  const rnd = mulberry32(555);
+let _grass = null;
+function grassAssets() {
+  if (_grass) return _grass;
   const blade = new THREE.BufferGeometry();
   blade.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, -0.34, 0.5, 0, 0.34, 0.5, 0, 0, 1, 0], 3));
   blade.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
@@ -407,6 +446,30 @@ export function createGrass(count) {
     fHead: 'varying float vH;',
     fColor: 'diffuseColor.rgb *= mix(0.55, 1.2, vH); diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.18, 1.2, 0.8), smoothstep(0.7, 1.0, vH) * 0.4);',
   });
+  return (_grass = { blade, mat });
+}
+/** tufts: [{x, y, z, w, h, r, g, b}] → one instanced mesh of wind-blown blades (used by the zone builder) */
+export function grassSet(tufts, bounds = null) {
+  const { blade, mat } = grassAssets();
+  const mesh = new THREE.InstancedMesh(blade, mat, tufts.length);
+  const dummy = new THREE.Object3D(), c = new THREE.Color();
+  tufts.forEach((t, i) => {
+    dummy.position.set(t.x, t.y - 0.03, t.z);
+    dummy.rotation.set(0, (i * 2.399) % Math.PI, 0);
+    dummy.scale.set(t.w, t.h, 1);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+    mesh.setColorAt(i, c.setRGB(t.r, t.g, t.b));
+  });
+  mesh.receiveShadow = true;
+  mesh.layers.set(1);
+  mesh.frustumCulled = !!bounds;
+  if (bounds) mesh.boundingSphere = bounds;
+  return mesh;
+}
+export function createGrass(count) {
+  const rnd = mulberry32(555);
+  const { blade, mat } = grassAssets();
   const mesh = new THREE.InstancedMesh(blade, mat, count);
   mesh.receiveShadow = true;
   mesh.frustumCulled = false;

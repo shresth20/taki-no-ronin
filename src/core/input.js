@@ -30,7 +30,7 @@ export const input = {
 if (typeof window !== 'undefined') window.__input = input;
 
 const keys = new Set();
-const KEY_ACTION = { KeyJ: 'attack', KeyK: 'heavy', Space: 'jump', ShiftLeft: 'dodge', ShiftRight: 'dodge', KeyL: 'dodge', KeyE: 'special', KeyI: 'special', KeyF: 'block', KeyQ: 'block', ControlLeft: 'block' };
+const KEY_ACTION = { KeyJ: 'attack', KeyK: 'heavy', Space: 'jump', ShiftLeft: 'dodge', ShiftRight: 'dodge', KeyL: 'dodge', KeyE: 'special', KeyI: 'special', KeyF: 'block', KeyQ: 'block', ControlLeft: 'block', KeyU: 'attack', KeyO: 'heavy' };
 function syncMove() {
   const x = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
   const y = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
@@ -48,6 +48,8 @@ export function bindInput(canvas) {
     if (a) input.press(a);
     if (e.code === 'KeyP' || e.code === 'Escape') G.director?.togglePause(e.code === 'Escape');
     if (e.code === 'Enter') G.director?.skip();
+    if (e.code === 'KeyM' || e.code === 'Tab') { e.preventDefault(); G.director?.toggleMap(); }
+    if (e.code === 'Backquote') ui({ debug: !getUI().debug });
     syncMove();
   };
   const ku = (e) => {
@@ -61,11 +63,7 @@ export function bindInput(canvas) {
   const md = (e) => {
     if (getUI().isTouch) return;
     const ph = getUI().phase;
-    if (!locked() && (ph === 'combat' || ph === 'training')) {
-      // first click captures the mouse; where that is refused, dragging still turns the camera
-      try { canvas.requestPointerLock?.()?.catch?.(() => {}); } catch { /* optional */ }
-      dragging = true;
-    }
+    if (ph !== 'combat' && ph !== 'training' && ph !== 'explore') return;
     if (e.button === 0) input.press('attack');
     if (e.button === 2) input.press('heavy');
     if (e.button === 1) { input.press('block'); e.preventDefault(); }

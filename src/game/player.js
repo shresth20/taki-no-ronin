@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { G, ui } from '../core/state.js';
 import { input } from '../core/input.js';
 import { Character } from '../chars/character.js';
-import { heightAt, waterDepthAt, PLAY, WATER_Y, cliffZ } from '../world/terrain.js';
+import { groundAt as heightAt, waterDepthAt, constrain as navConstrain } from '../world/nav.js';
 import { damp, dampAngle, angleDiff, clamp, saturate, easeInOut, easeOutCubic, DEG, rand, rrange } from '../core/util.js';
 
 const LIGHTS = ['light1', 'light2', 'light3', 'light4'];
@@ -209,6 +209,7 @@ export class Player {
     }
     this.hp = Math.max(0, this.hp - dmg);
     this.stats.damage += dmg;
+    G.journey?.addDamage(dmg);
     this.comboI = 0;
     this.trail.on = false;
     this.hop = 0;
@@ -234,8 +235,8 @@ export class Player {
     this.stateT += dt;
     this.iframes -= dt;
     const ctl = !this.cineMode && input.enabled;
-    G.rig.basis(_b);
     const ix = ctl ? input.move.x : 0, iy = ctl ? input.move.y : 0;
+    G.rig.moveBasis(_b, ix, iy); // camera-relative, but held steady while a direction is held so a turning camera never bends the path
     let wx = _b.rx * ix + _b.fx * iy, wz = _b.rz * ix + _b.fz * iy;
     const mag = Math.min(1, Math.hypot(wx, wz));
     if (mag > 1e-3) { const wl = Math.hypot(wx, wz); wx /= wl; wz /= wl; }
@@ -435,7 +436,7 @@ export class Player {
     }
     if (depth > 0.04 && this.airY < 0.2) {
       this.rippleT -= dt * (0.3 + this.speed * 0.4);
-      if (this.rippleT < 0) { this.rippleT = 0.3; G.world.water.addRipple(this.pos.x, this.pos.z, 0.5 + this.speed * 0.08); }
+      if (this.rippleT < 0) { this.rippleT = 0.3; if (this.pos.z < 150) G.world.water.addRipple(this.pos.x, this.pos.z, 0.5 + this.speed * 0.08); }
     }
     if (this.ki >= 100 && rand() < dt * 9) G.vfx.embers(this.pos, 1, [3.0, 2.2, 0.8], 0.5);
     const k = Math.round(this.ki);
@@ -530,12 +531,9 @@ export class Player {
     }
   }
 
+  /** stay on walkable ground (paths, courts, bridges), sliding along its edges and any closed gate */
   constrain(px, pz) {
-    const p = this.pos;
-    const dx = p.x - PLAY.x, dz = p.z - PLAY.z, d = Math.hypot(dx, dz);
-    if (d > PLAY.r) { p.x = PLAY.x + (dx / d) * PLAY.r; p.z = PLAY.z + (dz / d) * PLAY.r; }
-    if (p.z < cliffZ(p.x) + 4) p.z = cliffZ(p.x) + 4;
-    if (heightAt(p.x, p.z) < WATER_Y - 0.95) { p.x = px; p.z = pz; }
+    navConstrain(this.pos, px, pz);
   }
 }
 export { rrange, easeOutCubic };

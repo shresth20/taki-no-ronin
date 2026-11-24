@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { G, useUI, ui } from '../core/state.js';
 import { input } from '../core/input.js';
+import WorldMap from './WorldMap.jsx';
+import Debug from './Debug.jsx';
 
 const D = () => G.director;
 const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -11,17 +13,21 @@ function Title({ game }) {
   const quality = useUI((s) => s.quality);
   const sound = useUI((s) => s.sound);
   const isTouch = useUI((s) => s.isTouch);
+  const hasSave = useUI((s) => s.hasSave);
   const loading = phase === 'loading';
   return (
     <div className="title">
       <div className="title-kanji" aria-hidden="true">滝の浪人</div>
       <div className="title-main">
-        <p className="eyebrow">A samurai action vertical slice</p>
+        <p className="eyebrow">A samurai's road in six lands</p>
         <h1>Taki no Ronin</h1>
-        <p className="lede">Dawn practice beside the falls. Then the birds go quiet.</p>
+        <p className="lede">From the falls, through village, bamboo and temple, to the castle of the Black Fang.</p>
         <div className="title-actions">
-          <button id="begin" className="btn-primary" disabled={loading} onClick={() => D()?.begin()}>
-            {loading ? 'Painting the valley…' : 'Begin'}
+          {hasSave && !loading && (
+            <button id="continue" className="btn-primary" onClick={() => D()?.begin(true)}>Continue</button>
+          )}
+          <button id="begin" className={hasSave && !loading ? 'btn-ghost big' : 'btn-primary'} disabled={loading} onClick={() => D()?.begin(false)}>
+            {loading ? 'Painting the valley…' : hasSave ? 'New journey' : 'Begin'}
           </button>
           <div className="seg" role="group" aria-label="Graphics quality">
             {['low', 'medium', 'high'].map((q) => (
@@ -38,7 +44,7 @@ function Title({ game }) {
           {isTouch ? (
             <>
               <li><b>Left thumb</b> move</li>
-              <li><b>Right side</b> drag to look</li>
+              <li><b>地</b> journey map</li>
               <li><b>斬 剛</b> attack · heavy</li>
               <li><b>避 防 跳</b> dodge · block · jump</li>
               <li><b>奥義</b> special when ki is full</li>
@@ -46,9 +52,9 @@ function Title({ game }) {
           ) : (
             <>
               <li><b>WASD</b> move</li>
-              <li><b>Mouse</b> look · <b>Click</b> attack · <b>Right click</b> heavy</li>
+              <li><b>Click / J</b> attack · <b>Right click / K</b> heavy</li>
               <li><b>Shift</b> dodge · <b>F</b> block / parry · <b>Space</b> jump</li>
-              <li><b>E</b> special when ki is full · <b>P</b> pause</li>
+              <li><b>E</b> special when ki is full · <b>M</b> map · <b>P</b> pause</li>
             </>
           )}
         </ul>
@@ -65,6 +71,7 @@ function Cinema() {
   const canSkip = useUI((s) => s.canSkip);
   const phase = useUI((s) => s.phase);
   const isTouch = useUI((s) => s.isTouch);
+  const zoneCard = useUI((s) => s.zoneCard);
   return (
     <>
       <div className={`bars ${letterbox ? 'on' : ''}`} aria-hidden="true"><i /><i /></div>
@@ -75,6 +82,13 @@ function Cinema() {
         </div>
       )}
       {subtitle && <p className="subtitle" key={subtitle}>{subtitle}</p>}
+      {zoneCard && phase !== 'title' && (
+        <div className="zonecard" key={zoneCard.id}>
+          <span className="zc-kanji">{zoneCard.kanji}</span>
+          <span className="zc-name">{zoneCard.name}</span>
+          <span className="zc-sub">{zoneCard.sub}</span>
+        </div>
+      )}
       {canSkip && (phase === 'intro' || phase === 'ambush' || phase === 'training') && (
         <button id="skip" className={`skip ${isTouch && phase === 'training' ? 'top' : ''}`} onClick={() => D()?.skip()}>
           {phase === 'training' ? 'Skip training' : 'Skip'} <span aria-hidden="true">▸</span>
@@ -150,11 +164,10 @@ function Prompt() {
   );
 }
 function Hud() {
-  const wave = useUI((s) => s.wave), left = useUI((s) => s.enemiesLeft), phase = useUI((s) => s.phase);
+  const wave = useUI((s) => s.wave), waves = useUI((s) => s.waves), left = useUI((s) => s.enemiesLeft), phase = useUI((s) => s.phase);
   const hurtAt = useUI((s) => s.hurtAt);
-  const isTouch = useUI((s) => s.isTouch);
-  const locked = useUI((s) => s.locked);
-  const show = phase === 'combat' || phase === 'training';
+  const objective = useUI((s) => s.objective);
+  const show = phase === 'combat' || phase === 'training' || phase === 'explore';
   return (
     <>
       {hurtAt > 0 && <div className="hurt" key={hurtAt} aria-hidden="true" />}
@@ -162,14 +175,15 @@ function Hud() {
         <Bars />
         <div className="hud-right">
           {phase === 'combat' && (
-            <div className="wave"><span>Wave {wave} / 3</span><b>{left}</b><span>{left === 1 ? 'foe' : 'foes'}</span></div>
+            <div className="wave">{waves > 1 && <span>Wave {wave} / {waves}</span>}<b>{left}</b><span>{left === 1 ? 'foe' : 'foes'}</span></div>
           )}
+          <button id="map" className="icon-btn map-btn" aria-label="Journey map" onClick={() => D()?.toggleMap()}>地</button>
           <button id="pause" className="icon-btn" aria-label="Pause" onClick={() => D()?.togglePause()}><i /><i /></button>
         </div>
         <Combo />
         <Boss />
         <Prompt />
-        {!isTouch && show && !locked && <p className="hint">Click the scene to capture the mouse · Esc releases it</p>}
+        {phase === 'explore' && objective && <p className="objective"><span>目的</span>{objective}</p>}
       </div>
       <Toast />
     </>
@@ -192,7 +206,7 @@ function Touch() {
   const isTouch = useUI((s) => s.isTouch);
   const stick = useRef(null), knob = useRef(null), base = useRef(null);
   const st = useRef({ id: null, ox: 0, oy: 0, lookId: null, lx: 0, ly: 0 });
-  const show = isTouch && (phase === 'combat' || phase === 'training') && !paused;
+  const show = isTouch && (phase === 'combat' || phase === 'training' || phase === 'explore') && !paused;
   useEffect(() => {
     if (!show) { input.move.x = input.move.y = 0; input.held.block = false; st.current.id = st.current.lookId = null; }
   }, [show]);
@@ -228,12 +242,8 @@ function Touch() {
     input.move.x = input.move.y = 0;
     base.current.classList.remove('on');
   };
-  const lookDown = (e) => { const s = st.current; if (s.lookId !== null) return; s.lookId = e.pointerId; s.lx = e.clientX; s.ly = e.clientY; e.currentTarget.setPointerCapture?.(e.pointerId); };
-  const lookMove = (e) => { const s = st.current; if (e.pointerId !== s.lookId) return; input.look.dx += (e.clientX - s.lx) * 1.6; input.look.dy += (e.clientY - s.ly) * 1.6; s.lx = e.clientX; s.ly = e.clientY; };
-  const lookUp = (e) => { const s = st.current; if (e.pointerId === s.lookId) s.lookId = null; };
   return (
     <div className="touch">
-      <div className="look-zone" onPointerDown={lookDown} onPointerMove={lookMove} onPointerUp={lookUp} onPointerCancel={lookUp} />
       <div className="stick-zone" ref={stick} onPointerDown={stickDown} onPointerMove={stickMove} onPointerUp={stickUp} onPointerCancel={stickUp}>
         <div className="stick-base" ref={base}><div className="stick-knob" ref={knob} /></div>
         <div className="stick-ghost" aria-hidden="true" />
@@ -263,7 +273,8 @@ function Touch() {
 /* ---------- overlays ---------- */
 function Pause({ game }) {
   const paused = useUI((s) => s.paused), quality = useUI((s) => s.quality), sound = useUI((s) => s.sound), physics = useUI((s) => s.physics);
-  if (!paused) return null;
+  const map = useUI((s) => s.map);
+  if (!paused || map) return null;
   return (
     <div className="sheet">
       <div className="panel">
@@ -288,7 +299,7 @@ function Result() {
       <div className="sheet dark">
         <div className="panel center">
           <h2><span>敗北</span> Defeated</h2>
-          <p className="lede">The river carries on. So can you.</p>
+          <p className="lede">The road remembers where you last rested. Rise there, and go on.</p>
           <button id="retry" className="btn-primary" onClick={() => D()?.retry()}>Rise again</button>
           <button id="to-title" className="btn-ghost" onClick={() => D()?.restart()}>Return to title</button>
         </div>
@@ -305,6 +316,7 @@ function Result() {
         <div><dt>Parries</dt><dd>{stats.parries}</dd></div>
         <div><dt>Perfect dodges</dt><dd>{stats.perfect}</dd></div>
         <div><dt>Damage taken</dt><dd>{Math.round(stats.damage)}</dd></div>
+        <div><dt>Falls</dt><dd>{stats.deaths}</dd></div>
       </dl>
       <button id="again" className="btn-primary" onClick={() => D()?.restart()}>Play again</button>
     </div>
@@ -313,6 +325,7 @@ function Result() {
 
 export default function Overlay({ game }) {
   const phase = useUI((s) => s.phase);
+  const map = useUI((s) => s.map);
   if (phase === 'debug') return null;
   return (
     <div className="ui" onContextMenu={(e) => e.preventDefault()}>
@@ -322,6 +335,8 @@ export default function Overlay({ game }) {
       <Touch />
       <Result />
       <Pause game={game} />
+      {map && <WorldMap onClose={() => D()?.toggleMap(false)} />}
+      <Debug />
     </div>
   );
 }

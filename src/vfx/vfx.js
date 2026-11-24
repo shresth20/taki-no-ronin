@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { G } from '../core/state.js';
 import { envUniforms } from '../world/env.js';
 import { getGlintTexture, getPetalTexture, getNoiseTexture, clamp, rand, rrange, DEG } from '../core/util.js';
-import { heightAt, WATER_Y } from '../world/terrain.js';
+import { groundAt as heightAt, waterLevelAt } from '../world/nav.js';
 
 /* Combat VFX: sword trails, slash crescents, a pooled particle system (sparks, dust, droplets,
    petals, embers), shockwave rings, glint flashes and floating enemy health bars.              */
@@ -182,7 +182,7 @@ class Particles {
       p.vx *= dr; p.vz *= dr; if (p.dragY) p.vy *= dr;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.ground) {
-        const gy = Math.max(heightAt(p.x, p.z), WATER_Y) + 0.02;
+        const gy = Math.max(heightAt(p.x, p.z), waterLevelAt(p.x, p.z)) + 0.02;
         if (p.y < gy) { p.y = gy; p.vy *= -0.25; p.vx *= 0.5; p.vz *= 0.5; }
       }
       p.rot += p.spin * dt;
@@ -314,7 +314,7 @@ class Rings {
   spawn(pos, r0, r1, color, life = 0.45) {
     const s = this.pool[this.i];
     this.i = (this.i + 1) % this.pool.length;
-    s.m.position.set(pos.x, Math.max(heightAt(pos.x, pos.z), WATER_Y) + 0.06, pos.z);
+    s.m.position.set(pos.x, Math.max(heightAt(pos.x, pos.z), waterLevelAt(pos.x, pos.z)) + 0.06, pos.z);
     s.u.uC.value.set(color);
     Object.assign(s, { t: 0, life, r0, r1 });
     s.m.visible = true;
@@ -435,6 +435,7 @@ export function createVfx(scene) {
       }
     },
     splash(pos, n = 10, scale = 1) {
+      const WATER_Y = Math.max(waterLevelAt(pos.x, pos.z), heightAt(pos.x, pos.z) - 0.3);
       for (let i = 0; i < n; i++) {
         const a = rand() * 6.283, sp = rrange(0.6, 2.6) * scale;
         nor.emit(mk({ x: pos.x, y: WATER_Y + 0.05, z: pos.z, vx: Math.cos(a) * sp, vy: rrange(2.2, 5.5) * scale, vz: Math.sin(a) * sp, g: -15, life: rrange(0.35, 0.7), w: 0.035, h: rrange(0.12, 0.28), shape: 1, r: 0.9, g2: 1, b: 1, a: 0.9 }));

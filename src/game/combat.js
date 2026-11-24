@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { G, ui } from '../core/state.js';
 import { Enemy } from './enemy.js';
 import { COLORS } from './player.js';
-import { waterDepthAt } from '../world/terrain.js';
+import { waterDepthAt } from '../world/nav.js';
 import { rand, rrange, angleDiff } from '../core/util.js';
 
 /* Resolves hits in both directions, hands out attack tokens so enemies take turns,

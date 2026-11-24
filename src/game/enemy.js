@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 import { G } from '../core/state.js';
 import { Character } from '../chars/character.js';
-import { heightAt, PLAY, WATER_Y, waterDepthAt } from '../world/terrain.js';
+import { groundAt as heightAt, waterDepthAt, constrain as navConstrain } from '../world/nav.js';
 import { damp, dampAngle, angleDiff, clamp, saturate, DEG, rand, rrange, rpick } from '../core/util.js';
 
 export const TYPES = {
   bandit: { hp: 64, dmg: 11, speed: 4.6, radius: 0.42, block: 0.22, hop: 0.13, attacks: ['over', 'side'], range: 1.95, cd: [1.5, 3.0], ring: 4.3, name: 'Bandit' },
   spear: { hp: 58, dmg: 13, speed: 4.3, radius: 0.42, block: 0.14, hop: 0.2, attacks: ['thrust', 'thrust', 'sweep'], range: 2.85, cd: [1.9, 3.4], ring: 5.0, name: 'Spearman' },
-  captain: { hp: 330, dmg: 16, speed: 4.1, radius: 0.56, block: 0.42, hop: 0, attacks: ['double', 'slam', 'over', 'double'], range: 2.35, cd: [0.9, 1.8], ring: 3.9, poise: true, name: 'Kurogane, Captain of the Black Fang' },
+  elite: { hp: 104, dmg: 14, speed: 4.8, radius: 0.44, block: 0.34, hop: 0.12, attacks: ['over', 'side', 'double', 'over'], range: 2.05, cd: [1.1, 2.3], ring: 4.0, name: 'Black Fang Guard' },
+  monk: { hp: 290, dmg: 15, speed: 4.3, radius: 0.52, block: 0.3, hop: 0.08, attacks: ['thrust', 'sweep', 'thrust', 'sweep'], range: 3.2, cd: [0.9, 1.7], ring: 4.8, poise: true, boss: true, name: 'Jakugan, the Fallen Abbot' },
+  captain: { hp: 340, dmg: 16, speed: 4.1, radius: 0.56, block: 0.42, hop: 0, attacks: ['double', 'slam', 'over', 'double'], range: 2.35, cd: [0.9, 1.8], ring: 3.9, poise: true, boss: true, name: 'Kurogane, Captain of the Black Fang' },
+  lord: { hp: 560, dmg: 19, speed: 4.4, radius: 0.6, block: 0.46, hop: 0, attacks: ['double', 'slam', 'over', 'double', 'slam'], range: 2.6, cd: [0.8, 1.5], ring: 4.1, poise: true, boss: true, enrage: 0.5, name: 'Onikage, Lord of the Black Fang' },
 };
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
 
@@ -39,8 +42,9 @@ export class Enemy {
     this.cineSpeed = 0;
     this.body = G.physics.createCharacter(this.radius * 0.85, 1.7);
     G.physics.teleport(this.body, this.pos);
-    this.trail = G.vfx.trail(kind === 'captain' ? '#ff6a3a' : '#ff9a6a', '#fff0d8', 0.14);
-    this.bar = kind === 'captain' ? null : G.vfx.bar();
+    this.trail = G.vfx.trail(this.type.boss ? '#ff6a3a' : '#ff9a6a', '#fff0d8', 0.14);
+    this.bar = this.type.boss ? null : G.vfx.bar();
+    this.rage = 1; // attack tempo multiplier (the lord's second wind)
     this.barT = 0;
     this.lastPhase = 0;
     this.goal = new THREE.Vector3(x, 0, z);
@@ -106,6 +110,11 @@ export class Enemy {
     this.char.flash = 1;
     const kn = (clip.knock ? 9.5 : 4.2) * (this.type.poise ? 0.45 : 1) * (opts.knock ?? 1);
     this.knock.set((dx / l) * kn, 0, (dz / l) * kn);
+    if (this.type.enrage && !this.enraged && this.hp > 0 && this.hp < this.hpMax * this.type.enrage) {
+      this.enraged = true;
+      this.rage = 0.62;
+      G.director.bossEnrage?.(this);
+    }
     if (this.hp <= 0) {
       if (opts.spare) { this.hp = 1; }
       else { this.die(dx / l, dz / l); return 'dead'; }
@@ -159,7 +168,7 @@ export class Enemy {
     w.visible = false;
     _v.set(nx * 4 + rrange(-2, 2), rrange(4, 7), nz * 4 + rrange(-2, 2));
     _v2.set(rrange(-9, 9), rrange(-4, 4), rrange(-9, 9));
-    G.physics.spawnDebris(drop, drop.position, _v, _v2, { box: this.kind === 'spear' ? [0.03, 0.9, 0.03] : [0.03, 0.42, 0.03] }, 7);
+    G.physics.spawnDebris(drop, drop.position, _v, _v2, { box: this.char.rig.variant.weapon === 'spear' ? [0.03, 0.9, 0.03] : [0.03, 0.42, 0.03] }, 7);
     G.combat.onEnemyDeath(this);
   }
 
@@ -231,7 +240,7 @@ export class Enemy {
           this.trail.on = true;
           const sl = this.secondHit ? clip.slash2 : clip.slash;
           if (sl) G.vfx.slash(this.pos, this.yaw, sl, clip.reach, clip.unblockable ? '#ff3a22' : '#ff8a4a', '#fff0d0', 0.26);
-          G.audio.sfx.whoosh(this.kind === 'captain');
+          G.audio.sfx.whoosh(!!this.type.boss);
         }
         if (this.swingOn && !this.hitDone && t >= hit[0]) {
           const ang = Math.abs(angleDiff(this.yaw, Math.atan2(px, pz)));
@@ -260,7 +269,7 @@ export class Enemy {
       }
       case 'recover':
         this.face(P.pos, 4, dt);
-        if (this.stateT >= this.recoverT) { this.releaseToken(); this.cooldown = rrange(T.cd[0], T.cd[1]); this.setState('circle'); }
+        if (this.stateT >= this.recoverT) { this.releaseToken(); this.cooldown = rrange(T.cd[0], T.cd[1]) * this.rage; this.setState('circle'); }
         break;
       case 'block':
         this.face(P.pos, 10, dt);
@@ -292,9 +301,13 @@ export class Enemy {
     const ox = this.pos.x, oz = this.pos.z;
     G.physics.moveCharacter(this.body, this.pos, mx * dt, mz * dt);
     if (this.active || this.state === 'dead') {
-      const dx = this.pos.x - PLAY.x, dz = this.pos.z - PLAY.z, d = Math.hypot(dx, dz);
-      if (d > PLAY.r + 1.5 && this.state !== 'enter') { this.pos.x = PLAY.x + (dx / d) * (PLAY.r + 1.5); this.pos.z = PLAY.z + (dz / d) * (PLAY.r + 1.5); }
-      if (heightAt(this.pos.x, this.pos.z) < WATER_Y - 1.0) { this.pos.x = ox; this.pos.z = oz; }
+      // stay inside the encounter's arena and on walkable ground
+      const A = G.arena;
+      if (A) {
+        const dx = this.pos.x - A.x, dz = this.pos.z - A.z, d = Math.hypot(dx, dz);
+        if (d > A.r - 0.5) { this.pos.x = A.x + (dx / d) * (A.r - 0.5); this.pos.z = A.z + (dz / d) * (A.r - 0.5); }
+      }
+      navConstrain(this.pos, ox, oz);
     }
     this.pos.y = heightAt(this.pos.x, this.pos.z) + this.hop;
 

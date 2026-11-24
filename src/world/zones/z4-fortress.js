@@ -1,0 +1,150 @@
+import { box, path, light } from './shapes.js';
+
+/* ZONE 04 — Kurogane-toride, the outer stronghold.
+   Three walled courts in a dog-leg. Each gate stays barred until the court before it is cleared. */
+const A = { x: 324, z: 8 }, B = { x: 360, z: 6 }, C = { x: 372, z: -40 };
+const W = (pts, o = {}) => ({ type: 'wall', kind: 'fort', h: 5.2, pts, ...o });
+const torchPair = (x, z, alongX, gap = 3.6) => [-1, 1].map((s) => ({ type: 'torch', x: x + (alongX ? 0 : s * gap), z: z + (alongX ? s * gap : 0) }));
+
+export default {
+  id: 'fortress',
+  index: 4,
+  name: 'Kurogane Stronghold',
+  kanji: '黒鉄砦',
+  sub: 'The fortified approach',
+  rect: { x0: 302, x1: 440, z0: -60, z1: 100 },
+  entry: { x: 304, z: 8, yaw: Math.PI / 2 },
+  exit: { x: 372, z: -60 },
+  ground: { edge: 'drop', slope: 2.6, shoulder: 2, floor: 1.6, base: 1.6, noise: 1.4, palette: 'fort' },
+  boundary: 'palisade',
+  objective: 'Break through the stronghold gates',
+  route: [[302, 8], [311.5, 8], [324, 8], [341.5, 8], [360, 6], [370, -13.5], [370, -26.5], [372, -40], [372, -61]],
+  landmark: { x: 360, z: 6, icon: 'fort' },
+  reveal: { cam: [272, 37, 28], to: [284, 33, 19], look: [330, 24, 6], lookTo: [356, 23, 0], fov: 50, dur: 4.6 },
+
+  pads: [box(350, -8, 104, 112, 22, 0)],
+  walk: [
+    path([[302, 8, 22], [311.5, 8, 22]], 4.8, { surface: 'paved' }),
+    box(A.x + 0.4, A.z, 27.4, 24, 22, 0, { id: 'court-a', surface: 'paved' }),
+    path([[336.5, 8, 22], [341.5, 8, 22]], 5, { surface: 'paved' }),
+    box(B.x, B.z, 38, 40, 22, 0, { id: 'court-b', surface: 'dirt' }),
+    path([[370, -13.5, 22], [370, -19, 22.4], [370, -26.5, 23]], 5, { surface: 'paved' }),
+    box(C.x, C.z, 30, 28, 23, 0, { id: 'court-c', surface: 'paved' }),
+    path([[372, -53.5, 23], [372, -61, 23.2]], 6, { surface: 'paved' }),
+  ],
+  water: [],
+  terrain: [{ op: 'ridge', pts: [[404, -60], [420, -10], [414, 50], [396, 90]], h: 34, w: 14 }],
+
+  structures: [
+    // court A
+    W([[309.5, 4.6], [309.5, -5.5], [339.5, -5.5], [339.5, 4.6]]),
+    W([[309.5, 11.4], [309.5, 21.5], [339.5, 21.5], [339.5, 11.4]]),
+    // court B
+    W([[339.5, -5.5], [339.5, -15.5], [366.6, -15.5]]),
+    W([[373.4, -15.5], [380.5, -15.5], [380.5, 27.5], [339.5, 27.5], [339.5, 21.5]]),
+    // passage and court C
+    W([[366.6, -15.5], [366.6, -24.5], [355.5, -24.5], [355.5, -55.5], [368.2, -55.5]]),
+    W([[373.4, -15.5], [373.4, -24.5], [388.5, -24.5], [388.5, -55.5], [375.8, -55.5]]),
+    { type: 'gate', id: 'f-1', style: 'fort', x: 309.5, z: 8, rot: Math.PI / 2, w: 6, open: true },
+    { type: 'gate', id: 'f-2', style: 'fort', x: 339.5, z: 8, rot: Math.PI / 2, w: 6, open: false },
+    { type: 'gate', id: 'f-3', style: 'fort', x: 370, z: -15.5, rot: 0, w: 6, open: false },
+    { type: 'gate', id: 'f-4', style: 'fortmain', x: 372, z: -55.5, rot: 0, w: 7, open: false },
+    { type: 'tower', kind: 'yagura', x: 309.5, z: -5.5 },
+    { type: 'tower', kind: 'yagura', x: 309.5, z: 21.5 },
+    { type: 'tower', kind: 'yagura', x: 380.5, z: 27.5 },
+    { type: 'tower', kind: 'yagura', x: 380.5, z: -15.5 },
+    { type: 'tower', kind: 'yagura', x: 355.5, z: -55.5 },
+    { type: 'tower', kind: 'yagura', x: 388.5, z: -55.5 },
+    { type: 'tower', kind: 'watch', x: 376.4, z: 23.4 },
+    { type: 'tower', kind: 'watch', x: 343.4, z: -11.6 },
+    // court A dressing
+    { type: 'hut', x: 317, z: 17.4, rot: Math.PI },
+    { type: 'rack', x: 315, z: -2.6, rot: 0 },
+    { type: 'rack', x: 332.5, z: 18.6, rot: Math.PI },
+    { type: 'barricade', x: 334.2, z: 1.2, rot: 0.5 },
+    { type: 'barricade', x: 334.6, z: 15.4, rot: -0.4 },
+    { type: 'banner', x: 312.4, z: 3.4, color: '#a51d22', h: 6, mon: 'fang' },
+    { type: 'banner', x: 312.4, z: 12.6, color: '#a51d22', h: 6, mon: 'fang' },
+    ...torchPair(312.6, 8, true), ...torchPair(336.4, 8, true),
+    { type: 'crates', x: 328.4, z: -2.6, n: 4 },
+    // court B dressing: a camp
+    { type: 'tent', x: 347.5, z: -8.5, rot: 0.9 },
+    { type: 'tent', x: 348.5, z: 21, rot: 2.2 },
+    { type: 'tent', x: 374.5, z: 13.5, rot: -1.2 },
+    { type: 'tent', x: 375.2, z: -1.5, rot: -1.6 },
+    { type: 'rack', x: 352.6, z: 25, rot: Math.PI },
+    { type: 'rack', x: 361.4, z: -12.8, rot: 0 },
+    { type: 'barricade', x: 353.4, z: 12.6, rot: 1.1 },
+    { type: 'barricade', x: 366.5, z: -3.4, rot: 2.3 },
+    { type: 'brazier', x: 346, z: 6.2 },
+    { type: 'brazier', x: 374.6, z: 6.2 },
+    { type: 'banner', x: 344, z: -12.4, color: '#a51d22', h: 6.5, mon: 'fang' },
+    { type: 'banner', x: 356, z: -13.2, color: '#1b1b22', h: 6.5, mon: 'fang' },
+    { type: 'banner', x: 378, z: -8, color: '#a51d22', h: 6.5, mon: 'fang' },
+    { type: 'banner', x: 378, z: 20, color: '#1b1b22', h: 6.5, mon: 'fang' },
+    { type: 'banner', x: 362, z: 25.4, color: '#a51d22', h: 6.5, mon: 'fang' },
+    { type: 'crates', x: 343.6, z: 15.6, n: 5 },
+    { type: 'barrels', x: 367.5, z: 24.4, n: 4 },
+    { type: 'drum', x: 343.8, z: 23.6 },
+    ...torchPair(342.6, 8, true), ...torchPair(370, -12.6, false),
+    // court C: the captain's ground
+    { type: 'curtain', x: 362.4, z: -51.6, rot: 0, w: 9 },
+    { type: 'curtain', x: 381.6, z: -51.6, rot: 0, w: 9 },
+    { type: 'banner', x: 358.4, z: -28, color: '#a51d22', h: 7, mon: 'fang' },
+    { type: 'banner', x: 385.6, z: -28, color: '#a51d22', h: 7, mon: 'fang' },
+    { type: 'banner', x: 358.4, z: -52, color: '#c9a34a', h: 7, mon: 'fang' },
+    { type: 'banner', x: 385.6, z: -52, color: '#c9a34a', h: 7, mon: 'fang' },
+    { type: 'brazier', x: 360, z: -40 },
+    { type: 'brazier', x: 384, z: -40 },
+    { type: 'rack', x: 384.6, z: -31.6, rot: -Math.PI / 2 },
+    ...torchPair(370, -28.4, false), ...torchPair(372, -52.6, false, 4.4),
+    { type: 'checkpoint', x: 314.4, z: 4.2, rot: 1.4 },
+    { type: 'checkpoint', x: 366.6, z: -9.6, rot: 0.4 },
+    { type: 'pickup', id: 'f-camp', kind: 'life', x: 376.6, z: 24.6 },
+    { type: 'smoke', x: 346, z: 6.2, h: 7 },
+    { type: 'smoke', x: 374.6, z: 6.2, h: 7 },
+  ],
+  trees: [['pine', 306, 28, 1.5], ['pine', 305.5, -12, 1.4], ['momiji', 346, 33, 1.2], ['pine', 386, 33, 1.5], ['momiji', 392.5, -20, 1.2], ['pine', 350, -30, 1.4], ['pine', 394, -48, 1.5]],
+
+  checkpoints: [
+    { id: 'fort-gate', x: 314.6, z: 6.4, yaw: Math.PI / 2, label: 'Stronghold gate' },
+    { id: 'fort-inner', x: 367.6, z: -8.4, yaw: Math.PI, label: 'Inner checkpoint' },
+  ],
+  encounters: [
+    {
+      id: 'f-guards', label: 'Gate guard', trigger: { x: 318.5, z: 8, r: 5 }, arena: { x: A.x, z: A.z, r: 18 },
+      waves: [{ max: 2, list: [['spear', 331, 3], ['spear', 331, 13], ['elite', 334, 8]] }],
+      locks: ['f-1'], opens: ['f-2'],
+    },
+    {
+      id: 'f-yard', label: 'The camp', trigger: { x: 349, z: 7, r: 6.5 }, arena: { x: B.x, z: B.z, r: 28 }, intro: 'ambush', caption: ['敵襲', 'To arms'],
+      waves: [
+        { max: 2, list: [['bandit', 366, 0], ['bandit', 366, 14], ['spear', 371, 7], ['spear', 360, -8]] },
+        { max: 2, label: 'Second line', list: [['elite', 372, 2], ['elite', 372, 12], ['spear', 358, 20], ['bandit', 356, -8]] },
+        { max: 3, label: 'Hold the gate!', list: [['elite', 368, -8], ['elite', 372, 6], ['spear', 364, 18], ['spear', 352, -6]] },
+      ],
+      locks: ['f-2'], opens: ['f-3'], checkpoint: 'fort-inner', done: 'The inner gate swings open.',
+    },
+    {
+      id: 'f-captain', label: 'The main gate', trigger: { x: 370.5, z: -31.5, r: 5.5 }, arena: { x: C.x, z: C.z, r: 21 }, intro: 'boss', boss: 'captain', finisher: true,
+      caption: ['黒鉄', 'Kurogane · Captain of the Black Fang'], line: 'A lone ronin at my gate. Hanamura sends its regards, does it?',
+      waves: [{ max: 2, list: [['captain', 372, -49], ['elite', 364, -46], ['elite', 380, -46]] }],
+      locks: ['f-3'], opens: ['f-4'], done: 'The main gate is open. The castle waits above.',
+    },
+  ],
+  camera: [
+    { x: 306, z: 8, r: 6, yaw: -1.25, dist: 13, pitch: 0.78 },
+    { x: A.x, z: A.z, r: 13, yaw: -1.05, dist: 13.4, pitch: 0.88 },
+    { x: B.x, z: B.z, r: 20, yaw: -0.85, dist: 14.2, pitch: 0.9 },
+    { x: 370, z: -20, r: 6, yaw: -0.3, dist: 12.5, pitch: 0.84 },
+    { x: C.x, z: C.z, r: 14, yaw: -0.15, dist: 13.8, pitch: 0.88 },
+    { x: 372, z: -58, r: 5, yaw: 0, dist: 12.5, pitch: 0.74 },
+  ],
+  lighting: light({
+    sun: [15, -58], sunColor: '#ff9d62', sunI: 2.9,
+    skyTop: '#39407a', skyHorizon: '#f39a62', cloudLit: '#ffc59a', cloudShade: '#5b5078', coverage: 0.66,
+    hemiSky: '#c2c0ee', hemiGround: '#9a7f72', hemiI: 1.3,
+    fog: '#d8a892', fogD: 0.0062, wind: 1.9, sat: 1.14, contrast: 1.07, tint: '#fff1e6', shafts: 0.6, bloom: 0.8, glow: 1.0,
+  }),
+  audio: { falls: 0, river: 0, wind: 0.2, birds: 0, fire: 0.6 },
+};

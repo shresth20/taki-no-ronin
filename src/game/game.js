@@ -3,8 +3,11 @@ import { input, bindInput } from '../core/input.js';
 import { createPhysics } from '../core/physics.js';
 import { createAudio } from '../core/audio.js';
 import { createWorld } from '../world/index.js';
-import { ENV } from '../world/env.js';
+import { ENV, zoneMix } from '../world/env.js';
 import { heightAt, ARENA } from '../world/terrain.js';
+import { ZONES } from '../world/zones/index.js';
+import { waterDist } from '../world/nav.js';
+import { createJourney } from './journey.js';
 import { Character } from '../chars/character.js';
 import { createVfx } from '../vfx/vfx.js';
 import { Player } from './player.js';
@@ -31,7 +34,11 @@ export class Game {
     G.scene = scene;
     G.camera = camera;
     const q = new URLSearchParams(location.search);
-    let quality = getUI().isTouch || Math.min(window.innerWidth, window.innerHeight) < 520 ? 'medium' : 'high';
+    // first guess from the device: phones and tablets start on medium, machines with little memory or few cores
+    // (budget tablets, entry Chromebooks) start on low. The frame-rate monitor still steps down if this was optimistic.
+    const mem = navigator.deviceMemory || 8, cores = navigator.hardwareConcurrency || 8;
+    const small = getUI().isTouch || Math.min(window.innerWidth, window.innerHeight) < 520;
+    let quality = mem <= 4 || cores <= 4 ? (small || mem <= 2 || cores <= 2 ? 'low' : 'medium') : small ? 'medium' : 'high';
     try { quality = localStorage.getItem('tnr-quality') || quality; } catch { /* storage is optional */ }
     if (q.get('quality')) quality = q.get('quality');
     if (!QUALITY[quality]) quality = 'medium';
@@ -44,11 +51,16 @@ export class Game {
     scene.fog = world.fog;
     G.physics = await createPhysics(world.colliders);
     ui({ physics: G.physics.name });
+    // each streamed zone brings its own solid footprints and takes them away again
+    world.onZoneLoad((h) => { h.phys = G.physics.addStatics(h.solids); });
+    world.onZoneUnload((h) => { if (h.phys) G.physics.removeStatics(h.phys); h.phys = null; });
     G.vfx = createVfx(scene);
     G.audio = createAudio();
     G.rig = new CameraRig(camera);
     G.combat = createCombat(scene);
     G.player = new Player(scene);
+    G.journey = createJourney(scene);
+    G.journey.bind();
     G.director = createDirector(this);
     G.input = input;
     this.unbind = bindInput(gl.domElement);
@@ -59,11 +71,20 @@ export class Game {
     else {
       G.director.startTitle();
       const start = q.get('start');
-      if (start === 'training') G.director.startTraining();
-      else if (start === 'ambush') G.director.startAmbush();
-      else if (start === 'combat') G.director.startCombat();
-      else if (start === 'intro') G.director.startIntro();
+      if (start === 'training') { G.journey.reset(false); G.director.startTraining(); }
+      else if (start === 'intro') { G.journey.reset(false); G.director.startIntro(); }
+      else if (start === 'road') { G.journey.reset(false); G.director.endDeparture(); }
+      else if (q.get('zone') !== null) { G.journey.reset(false); G.director.debugJump(Number(q.get('zone'))); }
+      if (q.get('at')) { const [x, z] = q.get('at').split(',').map(Number); G.player.place(x, z, G.player.yaw); G.rig.snapBehind(); }
     }
+    if (G.test) window.__route = ZONES.flatMap((z) => z.route);
+    if (G.test) {
+      // test hooks: fixed camera and direct placement
+      window.__cam = (pos, look) => { this.debugCam = pos ? { pos, look } : null; };
+      window.__goto = (zi, x, z) => { G.director.debugJump(zi); if (x !== undefined) { G.player.place(x, z, G.player.yaw); G.rig.snapBehind(); } };
+    }
+    if (q.get('debug') !== null) ui({ debug: true });
+    if (q.get('noocc') !== null) G.noOcc = true;
     if (q.get('cam')) this.debugCam = { pos: q.get('cam').split(',').map(Number), look: (q.get('look') || '0,9,-40').split(',').map(Number) };
     this.ready = true;
   }
@@ -123,13 +144,15 @@ export class Game {
             G.enemies.splice(i, 1);
           }
         }
+        G.physics.recenter(P.pos.x, P.pos.z);
         G.physics.step(dt);
       }
+      G.journey.update(dt, rdt);
       G.vfx.update(dt, rdt, cam);
       for (const e of G.enemies) e.updateBar(rdt, cam);
       // boss bar in the HUD
       if (st.boss) {
-        const b = G.enemies.find((e) => e.kind === 'captain');
+        const b = G.enemies.find((e) => e.type.boss && e.alive) || G.enemies.find((e) => e.type.boss);
         const hp = b ? Math.max(0, b.hp) : 0;
         if (Math.abs(hp - st.boss.hp) > 0.5) ui({ boss: { ...st.boss, hp } });
       }
@@ -140,14 +163,25 @@ export class Game {
       p.speed = damp(p.speed, 0, 3.2, rdt);
       const lock = st.phase === 'combat' ? (P.target?.alive ? P.target : P.nearestEnemy(9)) : null;
       G.rig.update(rdt, P, lock);
+      this.fpsT = (this.fpsT || 0) + 1;
       if (this.debugCam) {
         cam.position.set(...this.debugCam.pos);
         cam.lookAt(...this.debugCam.look);
       }
-      G.world.update(dt, cam, P.pos);
-      G.audio.update(rdt, P.pos);
+      G.world.update(dt, cam, P.pos, rdt);
+      // ambience: each zone's mix, weighted by where we stand
+      const amb = this.amb || (this.amb = { falls: 0, river: 0, wind: 0, birds: 0, fire: 0, mix0: 1, water: 9 });
+      for (const k of ['falls', 'river', 'wind', 'birds', 'fire']) { let v = 0; for (let i = 0; i < ZONES.length; i++) v += ZONES[i].audio[k] * zoneMix[i]; amb[k] = v; }
+      amb.mix0 = zoneMix[0];
+      if ((this.ambT = (this.ambT || 0) + rdt) > 0.3) { this.ambT = 0; amb.water = waterDist(P.pos.x, P.pos.z); }
+      G.audio.update(rdt, P.pos, amb);
     }
-    if (!this.skipRender) G.world.water.renderReflection(G.gl, G.scene, cam);
+    // the mirror pass draws the valley a second time: medium quality refreshes it on alternate frames, which the
+    // moving water hides completely
+    if (!this.skipRender && G.world.reflects()) {
+      this.reflN = (this.reflN || 0) + 1;
+      if (G.test || this.reflN % (G.quality.reflectEvery || 1) === 0) G.world.water.renderReflection(G.gl, G.scene, cam);
+    }
     this.applyPost();
   }
 

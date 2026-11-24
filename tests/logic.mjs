@@ -2,8 +2,13 @@
 export default async function (page) {
   const step = (n, dt = 1 / 60) => page.evaluate(([n, dt]) => window.__step(dt, n, false), [n, dt]);
   const ev = (f) => page.evaluate(f);
-  await ev(() => window.__G.director.startCombat());
-  await step(30);
+  // walk into the village street fight so there are live enemies around the player
+  await ev(() => { const G = window.__G; G.journey.reset(false); G.journey.unlockThrough(1); window.__goto(1, 36, 166);
+    const I = window.__input;
+    for (let i = 0; i < 60; i++) { const b = G.rig.basis({}, G.rig.moveYaw); I.move.x = 0.5 * b.rx + 0.86 * b.rz; I.move.y = 0.5 * b.fx + 0.86 * b.fz; window.__step(1 / 30, 1, false); }
+    I.move.x = I.move.y = 0;
+  });
+  await step(90);
   // --- parry: start blocking, then let an enemy blow land inside the window
   let r = await ev(() => {
     const G = window.__G, P = G.player, e = G.enemies[0];
@@ -36,6 +41,10 @@ export default async function (page) {
   });
   console.log('plunge', JSON.stringify(r));
   await step(60);
+  // --- roll interrupted by nothing, then hit during the vulnerable tail must not leave the body tilted
+  r = await ev(() => { const G = window.__G, P = G.player, e = G.enemies[0]; P.setState('idle'); P.iframes = 0; window.__input.press('dodge'); window.__step(1 / 60, 26, false); const mid = P.char.roll; P.iframes = 0; G.combat.enemyHit(e, e.char.clips.side); window.__step(1 / 60, 2, false); return { mid: +mid.toFixed(2), after: P.char.roll, st: P.state }; });
+  console.log('roll-hit', JSON.stringify(r));
+  await step(60);
   // --- unblockable while blocking, then defeat and retry
   r = await ev(() => {
     const G = window.__G, P = G.player, e = G.enemies[0];
@@ -50,7 +59,4 @@ export default async function (page) {
   // --- pause freezes time
   r = await ev(() => { const G = window.__G; G.director.togglePause(); const t0 = G.time; window.__step(1 / 30, 10, false); const frozen = G.time === t0; G.director.togglePause(); window.__step(1 / 30, 5, false); return { frozen, running: G.time > t0 }; });
   console.log('pause', JSON.stringify(r));
-  // --- roll interrupted by nothing, then hit during the vulnerable tail must not leave the body tilted
-  r = await ev(() => { const G = window.__G, P = G.player, e = G.enemies[0]; P.setState('idle'); P.iframes = 0; window.__input.press('dodge'); window.__step(1 / 60, 26, false); const mid = P.char.roll; P.iframes = 0; G.combat.enemyHit(e, e.char.clips.side); window.__step(1 / 60, 2, false); return { mid: +mid.toFixed(2), after: P.char.roll, st: P.state }; });
-  console.log('roll-hit', JSON.stringify(r));
 }

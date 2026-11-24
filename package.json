@@ -1,0 +1,29 @@
+{
+  "name": "taki-no-ronin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Taki no Ronin — an anime samurai action vertical slice built with React Three Fiber",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:page": "vite build && node scripts/build-page.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.2",
+    "@react-three/postprocessing": "3.2.2",
+    "gsap": "3.15.1",
+    "postprocessing": "6.39.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.180.0",
+    "zustand": "5.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.3.0",
+    "vite": "8.3.8"
+  }
+}

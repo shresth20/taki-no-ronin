@@ -27,6 +27,8 @@ export const RIVER = [];
   }
 }
 const PATH_CTRL = [[-17, 36], [-15, 24], [-11, 12], [-6, 2], [-2.5, -5]];
+/** the meadow path (torii to training ground) and the width it is worn to: lanterns line it (props.js) */
+export const MEADOW_PATH = PATH_CTRL, MEADOW_PATH_W = 2.9;
 // the gorge trail added for the journey south (vegetation keeps clear of it; the ground itself is shaped in world/nav.js)
 const TRAIL_CTRL = [[-15.8, 29.5], [-15, 39], [-12, 49], [-9.6, 60], [-8.4, 70], [-7.4, 80], [-4.6, 86], [-2.9, 95], [-2.2, 104], [-1.7, 111], [-1.4, 118], [16.2, 119.2], [17.6, 126], [18.6, 134]];
 
@@ -106,12 +108,14 @@ function sample(grid, x, z) {
 export const legacyHeightAt = (x, z) => sample(H, x, z);
 /** final ground height. The navigation module swaps in the stitched six-zone world (see world/nav.js). */
 export let heightAt = legacyHeightAt;
-export function setHeightProvider(fn) { heightAt = fn; }
+/** the ground as it lay before later cuts through it (the gorge). The valley's planting was laid out on this and must not move */
+export let plantingHeightAt = legacyHeightAt;
+export function setHeightProvider(fn, planting = fn) { heightAt = fn; plantingHeightAt = planting; }
 export const riverDistAt = (x, z) => sample(RD, x, z);
 export const waterDepthAt = (x, z) => WATER_Y - heightAt(x, z);
-export function slopeAt(x, z) {
+export function slopeAt(x, z, hf = heightAt) {
   const e = 0.8;
-  const dx = heightAt(x + e, z) - heightAt(x - e, z), dz = heightAt(x, z + e) - heightAt(x, z - e);
+  const dx = hf(x + e, z) - hf(x - e, z), dz = hf(x, z + e) - hf(x, z - e);
   return Math.hypot(dx, dz) / (2 * e);
 }
 export const inArena = (x, z, pad = 0) => Math.hypot(x - ARENA.x, z - ARENA.z) < ARENA.r + pad;
@@ -131,7 +135,7 @@ export function buildTerrainGeometry() {
   const c = new THREE.Color(), t = new THREE.Color();
   const grassA = new THREE.Color('#76b040'), grassB = new THREE.Color('#3f8c44'), gold = new THREE.Color('#bfb24a');
   const forest = new THREE.Color('#3c7a3c'), sand = new THREE.Color('#cdbd8c'), wet = new THREE.Color('#8d8866');
-  const bed = new THREE.Color('#7fa08a'), deep = new THREE.Color('#2f6a70'), rock = new THREE.Color('#6d8983'), dirt = new THREE.Color('#a8905c');
+  const bed = new THREE.Color('#7fa08a'), deep = new THREE.Color('#2f6a70'), rock = new THREE.Color('#6d8983');
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
     const n1 = fbm(x * 0.06 + 3, z * 0.06 + 7, 3), n2 = fbm(x * 0.021 + 30, z * 0.021 + 11, 3);
@@ -139,7 +143,7 @@ export function buildTerrainGeometry() {
     c.lerp(gold, smoothstep(0.56, 0.72, n2) * 0.75);
     const ac = Math.hypot(x - ARENA.x, z - ARENA.z);
     c.lerp(forest, smoothstep(ARENA.r + 2, ARENA.r + 14, ac) * 0.75);
-    c.lerp(dirt, (1 - smoothstep(0.7, 2.0, Math.min(distToPath(x, z), distToPath(x, z, TRAIL_CTRL) - 0.6, Math.hypot(x + 15.5, z - 55.5) - 3.6) + (n1 - 0.5) * 1.5)) * 0.8);
+    // the paths are painted per pixel by the worn-ground shader (world/paths.js), not into these vertex colours
     c.lerp(sand, 1 - smoothstep(0.18, 0.55, y + (n1 - 0.5) * 0.25));
     c.lerp(wet, 1 - smoothstep(-0.02, 0.14, y));
     if (y < 0) c.copy(bed).lerp(deep, smoothstep(-0.3, -2.2, y)).multiplyScalar(0.92 + n1 * 0.2);

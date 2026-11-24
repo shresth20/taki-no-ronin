@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mulberry32, getToonRamp, sharedUniforms, patchMaterial, GLSL_PAINT, GLSL_CANOPY, mergeColored, fbm, smoothstep, lerp, clamp } from '../core/util.js';
-import { heightAt, slopeAt, riverDistAt, riverHalfWidth, cliffZ, ARENA, pathDist, legacyPathDist, trailDist, inArena, PLAY } from './terrain.js';
+import { heightAt, plantingHeightAt, slopeAt, riverDistAt, riverHalfWidth, cliffZ, ARENA, pathDist, legacyPathDist, trailDist, inArena, PLAY } from './terrain.js';
 
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -249,8 +249,8 @@ export function createTrees(rocksForPines = []) {
     const a = rnd() * Math.PI * 2, d = ARENA.r + 9 + Math.pow(rnd(), 0.8) * 78;
     const x = ARENA.x + Math.cos(a) * d, z = ARENA.z + Math.sin(a) * d;
     if (Math.abs(x) > 122 || Math.abs(z) > 122) continue;
-    const h = heightAt(x, z);
-    if (h < 0.6 || slopeAt(x, z) > 0.75 || z < cliffZ(x) + 5 || riverDistAt(x, z) < riverHalfWidth(z) + 4) continue;
+    const h = plantingHeightAt(x, z);
+    if (h < 0.6 || slopeAt(x, z, plantingHeightAt) > 0.75 || z < cliffZ(x) + 5 || riverDistAt(x, z) < riverHalfWidth(z) + 4) continue;
     if (legacyPathDist(x, z) < 3) continue;
     let ok = true;
     for (const k in spots) for (const s of spots[k]) if ((s.x - x) ** 2 + (s.z - z) ** 2 < 30) ok = false;

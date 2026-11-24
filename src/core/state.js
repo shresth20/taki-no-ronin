@@ -22,6 +22,7 @@ export const useUI = create((set) => ({
   hurtAt: 0,
   quality: 'high',
   sound: true,
+  camView: (() => { try { return localStorage.getItem('tnr-camview') || 'mid'; } catch { return 'mid'; } })(), // high | mid | eye
   isTouch: false,
   locked: false,
   stats: null,
@@ -63,6 +64,8 @@ export const G = {
   input: null,
   post: { flash: 0, desat: 0, aberration: 0, invert: 0, vignette: 0.42, speed: 0 },
   test: typeof location !== 'undefined' && /[?&]test/.test(location.search),
+  // tester tools (?dev=1): the journey map becomes a teleporter, and it opens from the title too
+  dev: typeof location !== 'undefined' && (() => { const v = new URLSearchParams(location.search).get('dev'); return v !== null && v !== '0' && v !== 'false'; })(),
 };
 
 export const QUALITY = {

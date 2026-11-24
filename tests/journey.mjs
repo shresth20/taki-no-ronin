@@ -33,7 +33,9 @@ export default async function (page, { shot, args }) {
       } else if (ui().canSkip && B.frames % 20 === 0) D.skip();
       if (tx !== undefined) {
         const b = G.rig.basis({}, G.rig.moveYaw);
-        const dist = Math.hypot(tx - P.pos.x, tz - P.pos.z) || 1, dx = (tx - P.pos.x) / dist, dz = (tz - P.pos.z) / dist;
+        // walk the way a player would: round water, walls and rails (onto a bridge from its end), not into them
+        const dist = Math.hypot(tx - P.pos.x, tz - P.pos.z) || 1, w = window.__steer?.(P.pos.x, P.pos.z, tx, tz, true);
+        const dx = w ? w.x : (tx - P.pos.x) / dist, dz = w ? w.z : (tz - P.pos.z) / dist;
         const far = !fight || dist > 1.9;
         I.move.x = far ? dx * b.rx + dz * b.rz : 0;
         I.move.y = far ? dx * b.fx + dz * b.fz : 0;

@@ -23,7 +23,8 @@ export default async function (page) {
   ok('cannot walk off the side of the falls bridge', r[2] < 120.6, `z=${r[2].toFixed(2)}`);
   r = await ev(() => { window.__goto(0, -9, 60); return window.__walk(1, 0, 120); });
   ok('gorge trail: river bank stops the player', r[0] < -5.5, `x=${r[0].toFixed(2)}`);
-  r = await ev(() => { window.__goto(0, -9, 60); return window.__walk(-1, 0, 120); });
+  // (further south than the river check: at z 60 pushing west slides you, rightly, into the open shrine nook)
+  r = await ev(() => { window.__goto(0, -8.6, 69); return window.__walk(-1, 0, 120); });
   ok('gorge trail: hillside stops the player', r[0] > -13.5, `x=${r[0].toFixed(2)}`);
 
   // 2. a locked gate holds, then opens once its encounter is cleared
@@ -101,6 +102,9 @@ export default async function (page) {
     G.journey.unlockThrough(6);
     window.__goto(0); window.__step(1 / 30, 3, true); const sa = st();
     window.__goto(5); window.__step(1 / 30, 3, true); const sb = st();
+    // load the middle zones once before the baseline: the pieces zones share (boundary posts, palisade stakes...) are
+    // built on first use and kept, which is caching, not a leak
+    window.__goto(3); window.__step(1 / 30, 3, true);
     window.__goto(0); window.__step(1 / 30, 3, true); const a = mem();
     window.__goto(3); window.__step(1 / 30, 3, true); const sd = st();
     window.__goto(5); window.__step(1 / 30, 3, true); const b = mem();

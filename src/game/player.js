@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { G, ui } from '../core/state.js';
 import { input } from '../core/input.js';
 import { Character } from '../chars/character.js';
+import { Footing } from './footing.js';
 import { groundAt as heightAt, waterDepthAt, constrain as navConstrain } from '../world/nav.js';
 import { damp, dampAngle, angleDiff, clamp, saturate, easeInOut, easeOutCubic, DEG, rand, rrange } from '../core/util.js';
 
@@ -19,6 +20,7 @@ export class Player {
     this.vy = 0;
     this.airY = 0; // height above the ground while jumping
     this.hop = 0;
+    this.footing = new Footing(); // how the body rides the ground: steps, stairs, slopes
     this.grounded = true;
     this.hpMax = 100;
     this.hp = 100;
@@ -52,7 +54,7 @@ export class Player {
     return this.hp > 0;
   }
   place(x, z, yaw) {
-    this.pos.set(x, heightAt(x, z), z);
+    this.pos.set(x, this.footing.reset(x, z), z);
     this.yaw = yaw;
     this.vel.set(0, 0, 0);
     this.airY = 0;
@@ -407,8 +409,11 @@ export class Player {
     const px = this.pos.x, pz = this.pos.z;
     if (this.state !== 'cine' || this.cineMove) G.physics.moveCharacter(this.body, this.pos, this.vel.x * dt, this.vel.z * dt);
     if (!this.cineMode) this.constrain(px, pz);
-    const gy = heightAt(this.pos.x, this.pos.z);
+    const gy = this.footing.update(this.pos.x, this.pos.z, dt, Math.hypot(this.pos.x - px, this.pos.z - pz));
     if (this.state !== 'cine' || !this.cineY) this.pos.y = gy + this.airY + this.hop;
+    // feet find the ground under each of them while standing, walking or fighting on it; not in the air, a roll or a cut-scene pose
+    c.footY = gy;
+    c.footIK = this.airY > 0.04 || this.state === 'roll' || this.state === 'dead' || (this.state === 'cine' && this.cineY) ? 0 : 1;
     this.speed = Math.hypot(this.vel.x, this.vel.z);
 
     // animation inputs
@@ -489,7 +494,7 @@ export class Player {
           G.physics.moveCharacter(this.body, this.pos, dx, dz);
           this.constrain(px, pz);
         }
-        this.pos.y = heightAt(this.pos.x, this.pos.z);
+        this.pos.y = this.footing.reset(this.pos.x, this.pos.z);
         const to = this.pos;
         this.spMarks = [];
         for (const e of G.enemies) {

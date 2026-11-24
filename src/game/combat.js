@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { G, ui } from '../core/state.js';
 import { Enemy } from './enemy.js';
 import { COLORS } from './player.js';
-import { waterDepthAt } from '../world/nav.js';
+import { waterDepthAt, constrain as navConstrain } from '../world/nav.js';
 import { rand, rrange, angleDiff } from '../core/util.js';
 
 /* Resolves hits in both directions, hands out attack tokens so enemies take turns,
@@ -17,6 +17,41 @@ export function createCombat(scene) {
     G.rig.shake(strength.shake);
     G.post.aberration = Math.max(G.post.aberration, strength.ab ?? 0);
   };
+  /* Bodies are solid. The spreading in update() only steers; whatever still overlaps is pushed apart here, each body
+     giving way in proportion to the other's weight (its girth squared), so a guard shoulders a bandit aside and nobody
+     moves the lord. The player slips through only in a roll or a dashing cut, over a head in a jump, or in a cut-scene;
+     an enemy the director is still placing (not yet active) stands like a post. */
+  function shove(c, dx, dz) {
+    const ox = c.pos.x, oz = c.pos.z;
+    G.physics.moveCharacter(c.body, c.pos, dx, dz);
+    navConstrain(c.pos, ox, oz);
+  }
+  function solveContacts() {
+    const E = G.enemies, P = G.player;
+    const solid = (e) => e.alive && e.state !== 'dead';
+    const pFree = P.cineMode || P.state === 'roll' || (P.state === 'attack' && P.attack === 'dash') || P.state === 'special' || P.airY > 0.9 || !P.alive;
+    for (let it = 0; it < 2; it++) {
+      for (let i = 0; i < E.length; i++) {
+        const a = E[i];
+        if (!solid(a)) continue;
+        for (let j = i + 1; j < E.length; j++) {
+          const b = E[j];
+          if (!solid(b)) continue;
+          pair(a, b, a.active ? a.radius * a.radius : 0, b.active ? b.radius * b.radius : 0);
+        }
+        if (!pFree) pair(P, a, P.radius * P.radius, a.active ? a.radius * a.radius : 0);
+      }
+    }
+  }
+  function pair(a, b, wa, wb) {
+    // wa, wb: how heavy each is (0 = immovable here); the lighter one is moved the more
+    const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d = Math.hypot(dx, dz), min = (a.radius + b.radius) * 0.92;
+    if (d >= min || wa + wb === 0) return;
+    const nx = d > 1e-4 ? dx / d : Math.sin(a.yaw ?? 0), nz = d > 1e-4 ? dz / d : Math.cos(a.yaw ?? 0), gap = min - d;
+    const ka = wa === 0 ? 0 : wb === 0 ? 1 : wb / (wa + wb), kb = 1 - ka;
+    if (ka > 0) shove(a, -nx * gap * ka, -nz * gap * ka);
+    if (kb > 0) shove(b, nx * gap * kb, nz * gap * kb);
+  }
   const addCombo = (n = 1) => {
     combo += n;
     comboT = 2.6;
@@ -158,8 +193,8 @@ export function createCombat(scene) {
     },
     /** ground impact from slams. level 2 adds a damaging shockwave when an enemy owns it */
     slam(pos, level, owner) {
-      const wet = waterDepthAt(pos.x, pos.z) > 0.03;
-      G.vfx.ring(pos, 0.4, level >= 2 ? 4.4 : 2.4, owner.kind ? '#ffb07a' : '#dff4ff', level >= 2 ? 0.55 : 0.4);
+      const wet = waterDepthAt(pos.x, pos.z) > 0.03, k = owner.grow ?? 1; // a bigger boss hits the ground harder and wider
+      G.vfx.ring(pos, 0.4, (level >= 2 ? 4.4 : 2.4) * k, owner.kind ? '#ffb07a' : '#dff4ff', level >= 2 ? 0.55 : 0.4);
       if (wet) { G.vfx.splash(pos, level >= 2 ? 26 : 12, level >= 2 ? 1.8 : 1.1); G.audio.sfx.splash(); }
       else G.vfx.dust(pos, level >= 2 ? 14 : 7, level >= 2 ? 1.6 : 1.0);
       _d.set(0, 1, 0);
@@ -168,7 +203,7 @@ export function createCombat(scene) {
       G.rig.shake(0.3 * level);
       if (owner.kind && level >= 2 && !owner.hitDone) {
         const P = G.player;
-        if (Math.hypot(P.pos.x - pos.x, P.pos.z - pos.z) < 3.0 && P.airY < 0.7) {
+        if (Math.hypot(P.pos.x - pos.x, P.pos.z - pos.z) < 3.0 * k && P.airY < 0.7) {
           owner.hitDone = true;
           this.enemyHit(owner, owner.char.clip);
         }
@@ -241,6 +276,7 @@ export function createCombat(scene) {
           a.sep.z += (dz / d) * k;
         }
       }
+      solveContacts();
     },
   };
   return combat;

@@ -1,16 +1,20 @@
 import * as THREE from 'three';
 import { G } from '../core/state.js';
 import { Character } from '../chars/character.js';
+import { Footing } from './footing.js';
+import { steer } from './pathing.js';
 import { groundAt as heightAt, waterDepthAt, constrain as navConstrain } from '../world/nav.js';
 import { damp, dampAngle, angleDiff, clamp, saturate, DEG, rand, rrange, rpick } from '../core/util.js';
 
+/* `grow` makes each level's boss bigger than the last (on top of the rig's own scale: monk 1.4, captain 1.6, lord 1.8).
+   Radius, approach range, circling ring, attack reach and slam size grow with it, so a bigger boss hits where its blade lands. */
 export const TYPES = {
   bandit: { hp: 64, dmg: 11, speed: 4.6, radius: 0.42, block: 0.22, hop: 0.13, attacks: ['over', 'side'], range: 1.95, cd: [1.5, 3.0], ring: 4.3, name: 'Bandit' },
   spear: { hp: 58, dmg: 13, speed: 4.3, radius: 0.42, block: 0.14, hop: 0.2, attacks: ['thrust', 'thrust', 'sweep'], range: 2.85, cd: [1.9, 3.4], ring: 5.0, name: 'Spearman' },
   elite: { hp: 104, dmg: 14, speed: 4.8, radius: 0.44, block: 0.34, hop: 0.12, attacks: ['over', 'side', 'double', 'over'], range: 2.05, cd: [1.1, 2.3], ring: 4.0, name: 'Black Fang Guard' },
-  monk: { hp: 290, dmg: 15, speed: 4.3, radius: 0.52, block: 0.3, hop: 0.08, attacks: ['thrust', 'sweep', 'thrust', 'sweep'], range: 3.2, cd: [0.9, 1.7], ring: 4.8, poise: true, boss: true, name: 'Jakugan, the Fallen Abbot' },
-  captain: { hp: 340, dmg: 16, speed: 4.1, radius: 0.56, block: 0.42, hop: 0, attacks: ['double', 'slam', 'over', 'double'], range: 2.35, cd: [0.9, 1.8], ring: 3.9, poise: true, boss: true, name: 'Kurogane, Captain of the Black Fang' },
-  lord: { hp: 560, dmg: 19, speed: 4.4, radius: 0.6, block: 0.46, hop: 0, attacks: ['double', 'slam', 'over', 'double', 'slam'], range: 2.6, cd: [0.8, 1.5], ring: 4.1, poise: true, boss: true, enrage: 0.5, name: 'Onikage, Lord of the Black Fang' },
+  monk: { hp: 290, dmg: 15, speed: 4.3, radius: 0.52, block: 0.3, hop: 0.08, attacks: ['thrust', 'sweep', 'thrust', 'sweep'], range: 3.2, cd: [0.9, 1.7], ring: 4.8, grow: 1.15, poise: true, boss: true, name: 'Jakugan, the Fallen Abbot' },
+  captain: { hp: 340, dmg: 16, speed: 4.1, radius: 0.56, block: 0.42, hop: 0, attacks: ['double', 'slam', 'over', 'double'], range: 2.35, cd: [0.9, 1.8], ring: 3.9, grow: 1.33, poise: true, boss: true, name: 'Kurogane, Captain of the Black Fang' },
+  lord: { hp: 560, dmg: 19, speed: 4.4, radius: 0.6, block: 0.46, hop: 0, attacks: ['double', 'slam', 'over', 'double', 'slam'], range: 2.6, cd: [0.8, 1.5], ring: 4.1, grow: 1.34, poise: true, boss: true, enrage: 0.5, name: 'Onikage, Lord of the Black Fang' },
 };
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
 
@@ -19,11 +23,14 @@ export class Enemy {
     this.kind = kind;
     this.type = TYPES[kind];
     this.scene = scene;
-    this.char = new Character(kind, scene);
+    this.grow = this.type.grow ?? 1;
+    this.char = new Character(kind, scene, this.grow);
     this.pos = this.char.pos;
-    this.pos.set(x, heightAt(x, z), z);
+    this.footing = new Footing(); // how the body rides the ground: steps, stairs, slopes
+    this.pos.set(x, this.footing.reset(x, z), z);
     this.yaw = 0;
-    this.radius = this.type.radius;
+    this.radius = this.type.radius * this.grow;
+    this.range = this.type.range * this.grow;
     this.hpMax = this.type.hp;
     this.hp = this.hpMax;
     this.alive = true;
@@ -36,7 +43,7 @@ export class Enemy {
     this.sep = new THREE.Vector3();
     this.slotA = rand() * 6.283;
     this.strafe = rand() < 0.5 ? 1 : -1;
-    this.ringR = this.type.ring + rrange(-0.4, 0.6);
+    this.ringR = this.type.ring * this.grow + rrange(-0.4, 0.6);
     this.poiseHits = 0;
     this.hop = 0;
     this.cineSpeed = 0;
@@ -183,8 +190,10 @@ export class Enemy {
       const dx = tx - this.pos.x, dz = tz - this.pos.z, d = Math.hypot(dx, dz);
       if (d < stop) return d;
       const s = Math.min(speed, d * 4);
-      vx = (dx / d) * s;
-      vz = (dz / d) * s;
+      // round water, walls and rails rather than into them, when the straight way is shut (game/pathing.js)
+      const w = this.active ? steer(this.pos.x, this.pos.z, tx, tz) : null;
+      vx = (w ? w.x : dx / d) * s;
+      vz = (w ? w.z : dz / d) * s;
       return d;
     };
 
@@ -213,9 +222,9 @@ export class Enemy {
         break;
       }
       case 'approach': {
-        const d = moveTo(P.pos.x, P.pos.z, T.speed, T.range * 0.9);
+        const d = moveTo(P.pos.x, P.pos.z, T.speed, this.range * 0.9);
         this.face(P.pos, 9, dt);
-        if (d <= T.range * 1.05) this.startAttack(rpick(T.attacks));
+        if (d <= this.range * 1.05) this.startAttack(rpick(T.attacks));
         else if (this.stateT > 2.6 || !P.alive || P.cineMode) { this.releaseToken(); this.cooldown = 0.8; this.setState('circle'); }
         break;
       }
@@ -229,7 +238,7 @@ export class Enemy {
           G.audio.sfx.glint(!!clip.unblockable);
         }
         if (t > hit[0] - 0.1 && t < hit[0] + 0.05) {
-          const ls = (clip.lunge ?? 1) / 0.15 * saturate((pd - T.range * 0.55) / 1.2 + 0.25);
+          const ls = (clip.lunge ?? 1) / 0.15 * saturate((pd - this.range * 0.55) / 1.2 + 0.25);
           vx = Math.sin(this.yaw) * ls;
           vz = Math.cos(this.yaw) * ls;
         }
@@ -239,18 +248,18 @@ export class Enemy {
           this.hitDone = false;
           this.trail.on = true;
           const sl = this.secondHit ? clip.slash2 : clip.slash;
-          if (sl) G.vfx.slash(this.pos, this.yaw, sl, clip.reach, clip.unblockable ? '#ff3a22' : '#ff8a4a', '#fff0d0', 0.26);
+          if (sl) G.vfx.slash(this.pos, this.yaw, sl, clip.reach * this.grow, clip.unblockable ? '#ff3a22' : '#ff8a4a', '#fff0d0', 0.26);
           G.audio.sfx.whoosh(!!this.type.boss);
         }
         if (this.swingOn && !this.hitDone && t >= hit[0]) {
           const ang = Math.abs(angleDiff(this.yaw, Math.atan2(px, pz)));
-          if (pd - P.radius <= clip.reach && (pd < 1.0 || ang < (clip.arcDeg * 0.5) * DEG) && P.airY < 1.4) {
+          if (pd - P.radius <= clip.reach * this.grow && (pd < 1.0 || ang < (clip.arcDeg * 0.5) * DEG) && P.airY < 1.4) {
             this.hitDone = true;
             G.combat.enemyHit(this, clip);
           }
           if (clip.slam && t >= hit[0] + 0.04 && !this.slammed) {
             this.slammed = true;
-            _v.set(this.pos.x + Math.sin(this.yaw) * 1.6, this.pos.y, this.pos.z + Math.cos(this.yaw) * 1.6);
+            _v.set(this.pos.x + Math.sin(this.yaw) * 1.6 * this.grow, this.pos.y, this.pos.z + Math.cos(this.yaw) * 1.6 * this.grow);
             G.combat.slam(_v, 2, this);
           }
         }
@@ -309,7 +318,10 @@ export class Enemy {
       }
       navConstrain(this.pos, ox, oz);
     }
-    this.pos.y = heightAt(this.pos.x, this.pos.z) + this.hop;
+    const gy = this.footing.update(this.pos.x, this.pos.z, dt, Math.hypot(this.pos.x - ox, this.pos.z - oz));
+    this.pos.y = gy + this.hop;
+    c.footY = gy;
+    c.footIK = this.state === 'dead' ? 0 : 1;
 
     // animation
     locoSpeed = this.state === 'attack' || this.state === 'dead' || this.state === 'hit' || this.state === 'stagger' ? 0 : Math.hypot(vx, vz);

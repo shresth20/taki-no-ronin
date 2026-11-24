@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { G, useUI, ui } from '../core/state.js';
 import { input } from '../core/input.js';
+import { CAM_VIEWS } from '../game/camera.js';
 import WorldMap from './WorldMap.jsx';
 import Debug from './Debug.jsx';
+import RotateGate, { lockLandscape } from './Rotate.jsx';
 
 const D = () => G.director;
+const setCamView = (v) => { ui({ camView: v }); try { localStorage.setItem('tnr-camview', v); } catch { /* storage is optional */ } };
 const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 /* ---------- title ---------- */
@@ -24,9 +27,9 @@ function Title({ game }) {
         <p className="lede">From the falls, through village, bamboo and temple, to the castle of the Black Fang.</p>
         <div className="title-actions">
           {hasSave && !loading && (
-            <button id="continue" className="btn-primary" onClick={() => D()?.begin(true)}>Continue</button>
+            <button id="continue" className="btn-primary" onClick={() => { lockLandscape(); D()?.begin(true); }}>Continue</button>
           )}
-          <button id="begin" className={hasSave && !loading ? 'btn-ghost big' : 'btn-primary'} disabled={loading} onClick={() => D()?.begin(false)}>
+          <button id="begin" className={hasSave && !loading ? 'btn-ghost big' : 'btn-primary'} disabled={loading} onClick={() => { lockLandscape(); D()?.begin(false); }}>
             {loading ? 'Painting the valley…' : hasSave ? 'New journey' : 'Begin'}
           </button>
           <div className="seg" role="group" aria-label="Graphics quality">
@@ -43,7 +46,7 @@ function Title({ game }) {
         <ul className="keys">
           {isTouch ? (
             <>
-              <li><b>Left thumb</b> move</li>
+              <li><b>Left thumb</b> move · <b>drag screen</b> turn view · <b>pinch</b> zoom</li>
               <li><b>地</b> journey map</li>
               <li><b>斬 剛</b> attack · heavy</li>
               <li><b>避 防 跳</b> dodge · block · jump</li>
@@ -55,6 +58,7 @@ function Title({ game }) {
               <li><b>Click / J</b> attack · <b>Right click / K</b> heavy</li>
               <li><b>Shift</b> dodge · <b>F</b> block / parry · <b>Space</b> jump</li>
               <li><b>E</b> special when ki is full · <b>M</b> map · <b>P</b> pause</li>
+              <li><b>Two-finger swipe</b> turn view · <b>Pinch / wheel</b> zoom · <b>C</b> reset view</li>
             </>
           )}
         </ul>
@@ -272,7 +276,8 @@ function Touch() {
 
 /* ---------- overlays ---------- */
 function Pause({ game }) {
-  const paused = useUI((s) => s.paused), quality = useUI((s) => s.quality), sound = useUI((s) => s.sound), physics = useUI((s) => s.physics);
+  const paused = useUI((s) => s.paused), quality = useUI((s) => s.quality), sound = useUI((s) => s.sound);
+  const camView = useUI((s) => s.camView);
   const map = useUI((s) => s.map);
   if (!paused || map) return null;
   return (
@@ -283,11 +288,13 @@ function Pause({ game }) {
         <div className="row"><span>Graphics</span>
           <div className="seg">{['low', 'medium', 'high'].map((q) => <button key={q} id={`pq-${q}`} className={quality === q ? 'on' : ''} onClick={() => game.setQuality(q)}>{q}</button>)}</div>
         </div>
+        <div className="row"><span>Camera</span>
+          <div className="seg" role="group" aria-label="Camera view">{Object.entries(CAM_VIEWS).map(([id, v]) => <button key={id} id={`cam-${id}`} className={camView === id ? 'on' : ''} onClick={() => setCamView(id)}>{v.label}</button>)}</div>
+        </div>
         <div className="row"><span>Sound</span>
           <div className="seg"><button id="snd-on" className={sound ? 'on' : ''} onClick={() => { ui({ sound: true }); G.audio?.setEnabled(true); }}>on</button><button id="snd-off" className={!sound ? 'on' : ''} onClick={() => { ui({ sound: false }); G.audio?.setEnabled(false); }}>off</button></div>
         </div>
         <button id="restart" className="btn-ghost" onClick={() => { ui({ paused: false }); D()?.restart(); }}>Return to title</button>
-        <p className="fine">Parry: tap block just before a gold glint lands. Red glints cannot be blocked: roll away. Physics: {physics}.</p>
       </div>
     </div>
   );
@@ -335,8 +342,12 @@ export default function Overlay({ game }) {
       <Touch />
       <Result />
       <Pause game={game} />
+      {G.dev && !map && (phase === 'title' || phase === 'intro' || phase === 'ambush') && (
+        <button id="dev-map" className="dev-pill" onClick={() => D()?.toggleMap(true)}>Dev · 地 jump map <kbd>M</kbd></button>
+      )}
       {map && <WorldMap onClose={() => D()?.toggleMap(false)} />}
       <Debug />
+      <RotateGate />
     </div>
   );
 }

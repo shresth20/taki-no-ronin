@@ -11,7 +11,7 @@ import { DEG, clamp, lerp, saturate, easeInOut, easeOutCubic, easeInCubic } from
 const V = () => new THREE.Vector3();
 const Qn = () => new THREE.Quaternion();
 const ID = new THREE.Quaternion();
-const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const AXIS_Y = new THREE.Vector3(0, 1, 0), AXIS_X = new THREE.Vector3(1, 0, 0), _ql = new THREE.Quaternion();
 const _m = new THREE.Matrix4(), _x = V(), _y = V(), _z = V(), _e = new THREE.Euler();
 const R_SHOULDER = new THREE.Vector3(-0.19, 0.17, 0); // chest space
 
@@ -175,8 +175,11 @@ export class Animator {
     this.poleR = POLE_R.clone();
     this.poleL = POLE_L.clone();
     this.gripOffset = -0.135; // where the off hand sits along the weapon, relative to the main hand
+    // ground contact (Character sets it): how far each foot's ground is above the root's, and how far the hips must
+    // come down so the lower foot still reaches its ground. Rig units.
+    this.ik = { l: 0, r: 0, hips: 0, lean: 0 };
     // scratch
-    this.Qs = Qn(); this.Qc = Qn(); this.pS = V(); this.pC = V(); this.S = V(); this.T = V(); this.Tl = V(); this.pole = V();
+    this.Qs = Qn(); this.Qc = Qn(); this.pS = V(); this.pC = V(); this.S = V(); this.T = V(); this.Tl = V(); this.pole = V(); this.H = V();
     this.Qsw = Qn(); this.Qf = Qn(); this.q = Qn(); this.v = V();
   }
   snap() {
@@ -188,16 +191,19 @@ export class Animator {
     this.apply(this.cur);
   }
   apply(P) {
-    const b = this.b, { Qs, Qc, pS, pC, S, T, Tl, pole, Qsw, Qf, q, v } = this;
-    b.hips.position.copy(P.hipsPos);
+    const b = this.b, { Qs, Qc, pS, pC, S, T, Tl, pole, Qsw, Qf, q, v, ik } = this;
+    const H = this.H.copy(P.hipsPos);
+    H.y -= ik.hips;
+    b.hips.position.copy(H);
     b.hips.quaternion.copy(P.hipsQ);
     b.spine.quaternion.copy(ID).slerp(P.spineQ, 0.5);
+    if (ik.lean) b.spine.quaternion.premultiply(_ql.setFromAxisAngle(AXIS_X, ik.lean)); // into a climb (Character)
     b.chest.quaternion.copy(b.spine.quaternion);
     b.neck.quaternion.copy(ID).slerp(P.headQ, 0.35);
     b.head.quaternion.copy(ID).slerp(P.headQ, 0.65);
     Qs.copy(P.hipsQ).multiply(b.spine.quaternion);
     Qc.copy(Qs).multiply(b.chest.quaternion);
-    pS.copy(OFF.spine).applyQuaternion(P.hipsQ).add(P.hipsPos);
+    pS.copy(OFF.spine).applyQuaternion(P.hipsQ).add(H);
     pC.copy(OFF.chest).applyQuaternion(Qs).add(pS);
 
     // right arm carries the sword
@@ -223,8 +229,8 @@ export class Animator {
     for (let i = 0; i < 2; i++) {
       const left = i === 0;
       const foot = left ? P.lFoot : P.rFoot, yaw = left ? P.lYaw : P.rYaw;
-      S.copy(left ? OFF.lHip : OFF.rHip).applyQuaternion(P.hipsQ).add(P.hipsPos);
-      T.set(foot.x, foot.y + DIM.ankle, foot.z);
+      S.copy(left ? OFF.lHip : OFF.rHip).applyQuaternion(P.hipsQ).add(H);
+      T.set(foot.x, foot.y + DIM.ankle + (left ? ik.l : ik.r), foot.z);
       // knees point where the hips face, splayed out a little
       pole.copy(POLE_KNEE);
       pole.x += left ? 0.25 : -0.25;

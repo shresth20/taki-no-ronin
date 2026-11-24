@@ -1,10 +1,18 @@
-import { circle, path, deck, river, light, face } from './shapes.js';
+import { circle, path, deck, river, light, face, beside } from './shapes.js';
 
 /* ZONE 01 — Hanamura, a farming village on the river below the falls.
    Organic street plan: one main street from the north gate to the plaza, a riverside lane past the mill,
    a back alley over the shrine knoll, and a dike path out into the paddies. All of them rejoin the main route. */
 const PLAZA = { x: 60, z: 206, r: 13.2 };
 const H = (kind, x, z, tx, tz, o = {}) => ({ type: 'house', kind, x, z, rot: face(x, z, tx, tz), ...o });
+const MAIN = [[27.5, 151.5, 1.8], [35, 164, 1.6], [43, 178, 1.5], [51, 192, 1.5], [57, 201, 1.5]];
+const EAST = [[70, 207.5, 1.5], [78, 209, 1.5], [88, 212.4, 1.6], [98, 214, 1.7]];
+const DIKE = [[60, 217, 1.5], [60, 238, 1.35], [71, 243, 1.35]];
+// street lamps: a post on the verge just behind the fence line, its arm out over the street (right = right of the
+// direction the street is listed in)
+const lamp = (pts, w, at, side) => ({ type: 'lantern', ...beside(pts, w, at, side, 0.75), kind: 'post' });
+const SHRINE = { x: 82.2, z: 176.2, rot: face(82.2, 176.2, 78, 179) };
+const atShrine = (lx, lz) => ({ x: +(SHRINE.x + lx * Math.cos(SHRINE.rot) + lz * Math.sin(SHRINE.rot)).toFixed(2), z: +(SHRINE.z - lx * Math.sin(SHRINE.rot) + lz * Math.cos(SHRINE.rot)).toFixed(2), rot: SHRINE.rot });
 
 export default {
   id: 'village',
@@ -24,9 +32,9 @@ export default {
 
   walk: [
     path([[18.6, 133, 2.2], [21, 142, 2.0], [27.5, 151.5, 1.8]], 4.4, { surface: 'dirt' }),
-    path([[27.5, 151.5, 1.8], [35, 164, 1.6], [43, 178, 1.5], [51, 192, 1.5], [57, 201, 1.5]], 5.4, { id: 'main-street', surface: 'dirt' }),
+    path(MAIN, 5.4, { id: 'main-street', surface: 'dirt' }),
     circle(PLAZA.x, PLAZA.z, PLAZA.r, 1.5, { id: 'plaza', surface: 'paved' }),
-    path([[70, 207.5, 1.5], [78, 209, 1.5], [88, 212.4, 1.6], [98, 214, 1.7]], 5.2, { id: 'east-street', surface: 'dirt' }),
+    path(EAST, 5.2, { id: 'east-street', surface: 'dirt' }),
     // riverside lane: past the mill and back to the plaza
     path([[39, 171, 1.55], [30, 178, 1.4], [22, 185.5, 1.25], [19, 190, 1.2]], 3.6, { id: 'mill-lane', surface: 'dirt' }),
     circle(18.6, 191, 4.6, 1.2, { id: 'mill-yard', surface: 'dirt' }),
@@ -36,7 +44,7 @@ export default {
     circle(79.5, 178.5, 5.4, 2.4, { id: 'shrine-knoll', surface: 'moss' }),
     path([[82.5, 182, 2.3], [86.5, 191, 2.0], [88.5, 203, 1.7], [88.2, 211, 1.6]], 3.2, { surface: 'dirt' }),
     // dike out into the paddies (dead end with a view)
-    path([[60, 217, 1.5], [60, 238, 1.35], [71, 243, 1.35]], 2.6, { id: 'dike', surface: 'dirt' }),
+    path(DIKE, 2.6, { id: 'dike', surface: 'dirt' }),
     circle(73.5, 244, 3.2, 1.35, { surface: 'dirt' }),
     deck([[97.5, 214, 1.7], [104, 213.6, 2.7], [111, 213.1, 3.1], [118, 212.6, 2.8], [124.5, 212.1, 2.2]], 3.8, 'red', { id: 'red-bridge' }),
   ],
@@ -83,40 +91,43 @@ export default {
     { type: 'barrels', x: 49.3, z: 201.5, n: 3 },
     { type: 'cart', x: 46.8, z: 207.5, rot: 0.6 },
     { type: 'baskets', x: 64.8, z: 193.4, n: 4 },
-    { type: 'lantern', x: 55.4, z: 195.6, kind: 'post' },
-    { type: 'lantern', x: 71.6, z: 203.2, kind: 'post' },
-    { type: 'lantern', x: 55.2, z: 217.4, kind: 'post' },
-    { type: 'lantern', x: 31.5, z: 155, kind: 'post' },
-    { type: 'lantern', x: 40.5, z: 168, kind: 'post' },
-    { type: 'lantern', x: 48.6, z: 181.5, kind: 'post' },
-    { type: 'lantern', x: 84, z: 208.6, kind: 'post' },
-    { type: 'lantern', x: 93.2, z: 216.6, kind: 'stone' },
+    // street lamps. Main street: a pair inside the north gate (clear of its doors), one across from each side
+    // street's mouth, a pair at the corners where it opens onto the plaza
+    lamp(MAIN, 5.4, 4.5, 1), lamp(MAIN, 5.4, 4.5, -1),
+    lamp(MAIN, 5.4, 22.6, -1), lamp(MAIN, 5.4, 38.8, 1),
+    lamp(MAIN, 5.4, 49, 1), lamp(MAIN, 5.4, 49, -1),
+    // east street: the north corner of its mouth on the plaza (the spirit lamp takes the south one), one across from
+    // the knoll path, a pair inside the east gate; and one at the head of the dike
+    lamp(EAST, 5.2, 4.4, -1), lamp(EAST, 5.2, 18.7, 1), lamp(EAST, 5.2, 22.8, 1), lamp(EAST, 5.2, 22.8, -1),
+    lamp(DIKE, 2.6, 3.4, 1),
     { type: 'crates', x: 33.5, z: 171.4, n: 3 },
     { type: 'barrels', x: 46.5, z: 174.5, n: 2 },
     { type: 'woodpile', x: 24.2, z: 163.4, rot: 0.9 },
     { type: 'haystack', x: 44.5, z: 221.5 },
     { type: 'haystack', x: 82.5, z: 226.5 },
     { type: 'scarecrow', x: 75.2, z: 245.6, rot: -2.2 },
-    { type: 'shrine', x: 82.2, z: 176.2, rot: face(82.2, 176.2, 78, 179), s: 1.0 },
+    { type: 'shrine', ...SHRINE, s: 1.0 },
     { type: 'jizo', x: 80.2, z: 182.6, rot: 2.9, n: 2 },
-    { type: 'lantern', x: 76.2, z: 174.6, kind: 'stone' },
+    { type: 'lantern', ...atShrine(1.7, 1.0), kind: 'stone' }, // a pair flanking the shrine's front
+    { type: 'lantern', ...atShrine(-1.7, 1.0), kind: 'stone' },
     { type: 'pickup', id: 'v-knoll', kind: 'ki', x: 79.2, z: 178.6 },
     { type: 'pickup', id: 'v-dike', kind: 'life', x: 73.6, z: 244 },
-    { type: 'checkpoint', x: 31.2, z: 160.2, rot: 2.2 },
-    { type: 'checkpoint', x: 68.6, z: 211.6, rot: -1.2 },
+    // spirit lamps on the verge: the main street's west side past the gate lamps, the plaza's corner at the east street
+    { type: 'checkpoint', ...beside(MAIN, 5.4, 10, 1, 1.1) },
+    { type: 'checkpoint', ...beside(EAST, 5.2, 4.2, 1, 1.1) },
     { type: 'smoke', x: 67.5, z: 186, h: 9 },
     { type: 'smoke', x: 43.5, z: 157.5, h: 8 },
   ],
   trees: [
-    ['momiji', 24, 148, 1.15], ['momiji', 33.5, 147.5, 1.1], ['maple', 47.5, 163.5, 1.0], ['momiji', 33, 186, 1.0], ['green', 16, 170, 1.2],
-    ['momiji', 76, 172.5, 1.25], ['maple', 85.5, 180.5, 1.0], ['momiji', 55.5, 185, 0.95], ['sakura', 73, 191, 1.0], ['momiji', 37, 212.5, 1.05],
-    ['maple', 84.5, 195.5, 1.0], ['momiji', 91.5, 206.5, 1.0], ['green', 28, 205, 1.1], ['momiji', 55, 222.5, 0.9], ['maple', 100.5, 208, 1.1],
+    ['momiji', 21, 150, 1.15], ['momiji', 33.5, 147.5, 1.1], ['maple', 47.5, 163.5, 1.0], ['momiji', 33, 186, 1.0], ['green', 16, 170, 1.2],
+    ['momiji', 76, 172.5, 1.25], ['maple', 86.9, 180.9, 1.0], ['momiji', 55.5, 185, 0.95], ['sakura', 73, 191, 1.0], ['momiji', 38, 210, 1.05],
+    ['maple', 83.3, 195.7, 1.0], ['momiji', 91.5, 206.5, 1.0], ['green', 29.8, 203.4, 1.1], ['momiji', 55, 222.5, 0.9], ['maple', 100.5, 208, 1.1],
     ['momiji', 99.5, 220, 1.05], ['green', 12, 176, 1.1], ['momiji', 66, 222.8, 0.9],
   ],
 
   checkpoints: [
-    { id: 'village-gate', x: 30.2, z: 158.6, yaw: 0.6, label: 'Hanamura gate' },
-    { id: 'village-plaza', x: 67, z: 210, yaw: 1.4, label: 'Hanamura plaza' },
+    { id: 'village-gate', x: 31.3, z: 160.8, yaw: 0.6, label: 'Hanamura gate' },
+    { id: 'village-plaza', x: 72.4, z: 209.9, yaw: 1.4, label: 'Hanamura plaza' },
   ],
   encounters: [
     {

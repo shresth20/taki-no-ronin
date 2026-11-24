@@ -42,11 +42,18 @@ export async function createPhysics(colliders) {
 function rapierBackend(R, colliders) {
   const world = new R.World({ x: 0, y: -24, z: 0 });
   world.timestep = 1 / 60;
-  // static obstacles: tree trunks, boulders, pillars, lanterns ...
+  // static obstacles: tree trunks, boulders, pillars, lanterns ... A boulder carries its outline (`poly`, from its mesh),
+  // made a convex prism here so a body stops against the stone itself
   for (const c of colliders) {
     const y = heightAt(c.x, c.z);
     const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(c.x, y + 1.5, c.z));
-    world.createCollider(R.ColliderDesc.cylinder(2.5, c.r).setCollisionGroups(groups(GROUP_OBSTACLE, 0xffff)), body);
+    let desc = null;
+    if (c.poly) {
+      const pts = new Float32Array(c.poly.length * 6);
+      c.poly.forEach(([px, pz], i) => pts.set([px - c.x, -2.5, pz - c.z, px - c.x, 2.5, pz - c.z], i * 6));
+      desc = R.ColliderDesc.convexHull(pts);
+    }
+    world.createCollider((desc ?? R.ColliderDesc.cylinder(2.5, c.r)).setCollisionGroups(groups(GROUP_OBSTACLE, 0xffff)), body);
   }
   // coarse ground mesh for debris to land on: rebuilt around the player as the journey moves on
   let ground = null, gx = 1e9, gz = 1e9;
@@ -59,15 +66,16 @@ function rapierBackend(R, colliders) {
     world.createCollider(R.ColliderDesc.trimesh(grid.verts, grid.idx).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_DEBRIS)).setFriction(0.9), ground);
   }
   recenter(-9, 5);
-  /** solid footprints of a streamed zone: circles become cylinders, boxes cuboids. returns a token for removeStatics */
+  /** solid footprints of a streamed zone: circles become cylinders, boxes cuboids, from 2 m under the ground up to
+      the solid's height (`h`, default 5 m: a building). returns a token for removeStatics */
   function addStatics(list) {
     const bodies = [];
     for (const c of list) {
-      const y = heightAt(c.x, c.z);
-      const desc = R.RigidBodyDesc.fixed().setTranslation(c.x, y + 1.5, c.z);
+      const y = heightAt(c.x, c.z), half = ((c.h ?? 5) + 2) / 2;
+      const desc = R.RigidBodyDesc.fixed().setTranslation(c.x, y - 2 + half, c.z);
       if (c.r === undefined) desc.setRotation({ x: 0, y: Math.sin((c.rot || 0) / 2), z: 0, w: Math.cos((c.rot || 0) / 2) });
       const body = world.createRigidBody(desc);
-      const shape = c.r !== undefined ? R.ColliderDesc.cylinder(3.5, c.r) : R.ColliderDesc.cuboid(c.w / 2, 3.5, c.d / 2);
+      const shape = c.r !== undefined ? R.ColliderDesc.cylinder(half, c.r) : R.ColliderDesc.cuboid(c.w / 2, half, c.d / 2);
       world.createCollider(shape.setCollisionGroups(groups(GROUP_OBSTACLE, 0xffff)), body);
       bodies.push(body);
     }

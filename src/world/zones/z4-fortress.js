@@ -55,7 +55,7 @@ export default {
     { type: 'tower', kind: 'yagura', x: 380.5, z: -15.5 },
     { type: 'tower', kind: 'yagura', x: 355.5, z: -55.5 },
     { type: 'tower', kind: 'yagura', x: 388.5, z: -55.5 },
-    { type: 'tower', kind: 'watch', x: 376.4, z: 23.4 },
+    { type: 'tower', kind: 'watch', x: 376.4, z: 23.4, rot: Math.PI }, // ladder (local +x) faces into the court
     { type: 'tower', kind: 'watch', x: 343.4, z: -11.6 },
     // court A dressing
     { type: 'hut', x: 317, z: 17.4, rot: Math.PI },

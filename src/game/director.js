@@ -85,14 +85,16 @@ export function createDirector(game) {
     },
     togglePause(force) {
       const ph = getUI().phase;
+      if (getUI().map) { ui({ map: false, paused: false }); return; } // (with ?dev=1 the map also opens on the title)
       if (ph === 'title' || ph === 'loading' || ph === 'victory' || ph === 'defeat') return;
-      if (getUI().map) { ui({ map: false, paused: false }); return; }
       ui({ paused: force === true ? true : !getUI().paused });
       if (getUI().paused && document.pointerLockElement) document.exitPointerLock?.();
     },
     toggleMap(force) {
       const ph = getUI().phase;
-      if (ph !== 'explore' && ph !== 'combat' && ph !== 'training') return;
+      // testers (?dev=1) can open it from the title and over cinematics too, to jump anywhere
+      const ok = ph === 'explore' || ph === 'combat' || ph === 'training' || (G.dev && (ph === 'title' || ph === 'intro' || ph === 'ambush'));
+      if (!ok) return;
       const open = force ?? !getUI().map;
       ui({ map: open, paused: open });
     },
@@ -360,9 +362,10 @@ export function createDirector(game) {
       tl.to(p, { yaw: p.yaw + angleDiff(p.yaw, to), duration: 0.9, ease: 'power2.inOut' }, 0.2);
       if (enc.intro === 'boss') {
         // the boss walks out: held low in front of him, then the two of them in one frame
-        const dirx = Math.sin(lead.yaw), dirz = Math.cos(lead.yaw), sc = lead.char.scale;
-        for (const e of first) e.cineSpeed = 1.2;
-        shot(tl, 0, 3.6, [bx + dirx * 8 - dirz * 1.6, by + 0.7, bz + dirz * 8 + dirx * 1.6], [bx + dirx * 6.8 - dirz * 0.6, by + 1.0 * sc, bz + dirz * 6.8 + dirx * 0.6], [bx + dirx * 2, by + 1.7 * sc, bz + dirz * 2], [bx + dirx * 4.2, by + 1.85 * sc, bz + dirz * 4.2], 34, 30);
+        // a boss grown for its level strides further and the camera stands back by the same factor, so the shot keeps its framing
+        const g = lead.grow ?? 1, dirx = Math.sin(lead.yaw) * g, dirz = Math.cos(lead.yaw) * g, sc = lead.char.scale;
+        for (const e of first) e.cineSpeed = 1.2 * g;
+        shot(tl, 0, 3.6, [bx + dirx * 8 - dirz * 1.6, by + 0.7 * g, bz + dirz * 8 + dirx * 1.6], [bx + dirx * 6.8 - dirz * 0.6, by + 1.0 * sc, bz + dirz * 6.8 + dirx * 0.6], [bx + dirx * 2, by + 1.7 * sc, bz + dirz * 2], [bx + dirx * 4.2, by + 1.85 * sc, bz + dirz * 4.2], 34, 30);
         tl.call(() => { this.caption(enc.caption[0], enc.caption[1], 3.2); G.audio.sfx.gong(); G.rig.shake(0.35); }, null, 0.8);
         if (enc.line) tl.call(() => this.subtitle(enc.line, 3.2), null, 1.5);
         tl.call(() => { for (const e of first) e.cineSpeed = 0; }, null, 3.4);
@@ -606,6 +609,27 @@ export function createDirector(game) {
       const p = P();
       p.place(z.entry.x, z.entry.z, z.entry.yaw);
       rig().snapBehind();
+    },
+    /** tester jump (?dev=1, from the map): stand at a planned point with the road behind it walked (see devjump.js).
+        A fight you land in starts from its trigger on the next frame, as it would on foot. */
+    devTeleport(plan) {
+      if (!plan) return;
+      kill();
+      training = null;
+      G.audio.start();
+      J().abort();
+      G.combat.clear();
+      J().devPrepare(plan);
+      this.resume(); // lamp, health, camera and controls, exactly as rising at a checkpoint
+      G.world.streamer.loadNow(plan.zone);
+      G.world.streamer.update(plan.x, plan.z, 1e9, true);
+      const p = P();
+      p.place(plan.x, plan.z, plan.yaw);
+      rig().snapBehind();
+      ui({ zone: plan.zone, map: false, paused: false });
+      this.zoneCard(plan.zone);
+      const z = ZONES[plan.zone];
+      this.toast(`Dev jump · ${z.kanji} ${z.name}${plan.fight ? ' · ' + plan.fight.label : ''}`, 'cyan');
     },
   };
   return D;

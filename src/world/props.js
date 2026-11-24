@@ -1,6 +1,62 @@
 import * as THREE from 'three';
 import { mulberry32, getToonRamp, patchMaterial, GLSL_PAINT, mergeColored, fbm, ridged, smoothstep, M4, lerp } from '../core/util.js';
-import { heightAt, cliffZ, ARENA, POOL, RIVER, riverHalfWidth, TRAIN_SPOT, WATER_Y, FALLS } from './terrain.js';
+import { heightAt, cliffZ, ARENA, POOL, RIVER, riverHalfWidth, TRAIN_SPOT, WATER_Y, FALLS, pathDist, MEADOW_PATH, MEADOW_PATH_W } from './terrain.js';
+import { beside } from './zones/shapes.js';
+import { addStandable } from './nav.js';
+import { Parts, mergeKit, kitMaterial } from './kit/core.js';
+import { lanternBody, FIREBOX_Y } from './kit/build.js';
+
+/** the top of one rock instance as a height map, for feet to step onto: rays straight down through its own geometry */
+const _ray = new THREE.Raycaster(), _down = new THREE.Vector3(0, -1, 0), _o = new THREE.Vector3();
+function standOn(geometry, r, step = 0.15) {
+  const mesh = new THREE.Mesh(geometry);
+  mesh.position.set(r.x, r.y, r.z);
+  mesh.rotation.set(0, r.a, 0);
+  mesh.scale.set(r.sx, r.sy, r.sz);
+  mesh.updateMatrixWorld(true);
+  const R = Math.max(r.sx, r.sz) * 1.4, nx = Math.ceil((R * 2) / step) + 1, h = new Float32Array(nx * nx).fill(NaN), hits = [];
+  const x0 = r.x - R, z0 = r.z - R;
+  for (let j = 0; j < nx; j++) for (let i = 0; i < nx; i++) {
+    _ray.set(_o.set(x0 + i * step, r.y + r.sy * 2 + 1, z0 + j * step), _down);
+    hits.length = 0;
+    const hit = mesh.raycast(_ray, hits) ?? hits.sort((a, b) => a.distance - b.distance)[0];
+    if (hit && hit.point.y > heightAt(hit.point.x, hit.point.z) + 0.02) h[j * nx + i] = hit.point.y;
+  }
+  // a body steps up onto the stone as it reaches it (as a character controller's capsule rides up onto a step it
+  // touches), not once the shin is already inside a steep side: carry the rim's height out by about a body's radius
+  const out = h.slice(), k = Math.round(0.3 / step);
+  for (let j = 0; j < nx; j++) for (let i = 0; i < nx; i++) {
+    if (h[j * nx + i] === h[j * nx + i]) continue;
+    let best = NaN;
+    for (let b = -k; b <= k; b++) for (let a = -k; a <= k; a++) {
+      const ii = i + a, jj = j + b, v = h[jj * nx + ii];
+      if (ii < 0 || jj < 0 || ii >= nx || jj >= nx || a * a + b * b > k * k || v !== v) continue;
+      if (!(v <= best)) best = v;
+    }
+    out[j * nx + i] = best;
+  }
+  addStandable({ x0, z0, step, nx, nz: nx, h: out });
+}
+/** a rock's collider shaped to the rock: the convex outline of the mesh between knee and head height, so a body is
+    stopped where the stone actually bulges, neither inside it nor short of it */
+function fitCollider(geometry, r, col) {
+  const P = geometry.attributes.position, c = Math.cos(r.a), sn = Math.sin(r.a), pts = [];
+  const g = heightAt(r.x, r.z);
+  for (let i = 0; i < P.count; i++) {
+    const lx = P.getX(i) * r.sx, ly = P.getY(i) * r.sy, lz = P.getZ(i) * r.sz, y = r.y + ly;
+    if (y < g + 0.15 || y > g + 1.9) continue;
+    pts.push([r.x + lx * c + lz * sn, r.z - lx * sn + lz * c]);
+  }
+  if (pts.length < 3) return;
+  // monotone chain
+  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], hi = [];
+  for (const p of pts) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], p) <= 0) hi.pop(); hi.push(p); }
+  col.poly = lo.slice(0, -1).concat(hi.slice(0, -1));
+  col.r = Math.max(...col.poly.map(([x, z]) => Math.hypot(x - r.x, z - r.z)));
+}
 
 const ROCK_FRAG = `
   float paint = paintTri(vWPos, vWNrm, 0.21);
@@ -15,6 +71,23 @@ const ROCK_FRAG = `
 let _rockMat = null;
 export function rockMaterial() {
   return (_rockMat ??= patchMaterial(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: getToonRamp('soft') }), { key: 'rock', occlude: true, fHead: GLSL_PAINT, fColor: ROCK_FRAG }));
+}
+
+// cut rock walls (the gorge): grey stone faces, moss only where a ledge faces the sky
+const CRAG_FRAG = `
+  float paint = paintTri(vWPos, vWNrm, 0.17);
+  float paintB = paintTri(vWPos, vWNrm, 0.045);
+  vec3 rock = diffuseColor.rgb * (0.74 + 0.34 * paint) * (0.86 + 0.2 * paintB) * mix(vec3(1.0), paintTriRGB(vWPos, vWNrm, 0.08), 0.4);
+  float mossK = smoothstep(0.72, 0.93, vWNrm.y + (paint - 1.0) * 0.3);
+  vec3 moss = mix(vec3(0.22, 0.4, 0.15), vec3(0.47, 0.57, 0.2), clamp(paintB * 0.6, 0.0, 1.0));
+  rock = mix(rock, moss, mossK * 0.7);
+  rock *= mix(0.62, 1.0, smoothstep(-0.05, 0.45, vWPos.y));
+  diffuseColor.rgb = rock;
+`;
+let _cragMat = null;
+/** instanced only: the per-instance colour is the stone's tone (no vertex colours, which rockGeometry doesn't carry) */
+export function cragMaterial() {
+  return (_cragMat ??= patchMaterial(new THREE.MeshToonMaterial({ gradientMap: getToonRamp('soft') }), { key: 'crag', occlude: true, fHead: GLSL_PAINT, fColor: CRAG_FRAG }));
 }
 
 export function rockGeometry(seed, detail = 2) {
@@ -64,9 +137,11 @@ export function createRocks() {
   const lists = [[], [], []];
   const push = (x, z, sx, sy, sz, sink = 0.25, v = Math.floor(rnd() * 3)) => {
     const y = Math.max(heightAt(x, z), WATER_Y - 0.5) - sy * sink;
-    lists[v].push({ x, y, z, sx, sy, sz, a: rnd() * 6.28 });
+    const rock = { x, y, z, sx, sy, sz, a: rnd() * 6.28 };
+    lists[v].push(rock);
     const r = Math.max(sx, sz);
-    if (sy > 0.5) colliders.push({ x, z, r: r * 0.86 });
+    if (sy > 0.5) colliders.push((rock.col = { x, z, r: r * 0.86 }));
+    else rock.stand = true; // low enough to step onto: feet follow its top (below)
     if (heightAt(x, z) < 0.25) waterRocks.push({ x, z, r: r * 0.95 });
     return y;
   };
@@ -92,8 +167,15 @@ export function createRocks() {
     const a = (i / 13) * 6.283 + rnd() * 0.35, d = ARENA.r + 3 + rnd() * 5;
     const x = ARENA.x + Math.cos(a) * d, z = ARENA.z + Math.sin(a) * d;
     if (heightAt(x, z) < 0.4) continue;
-    const s = 0.8 + rnd() * 1.5;
-    push(x, z, s, s * (0.6 + rnd() * 0.6), s * (0.8 + rnd() * 0.4));
+    const s = 0.8 + rnd() * 1.5, sy = s * (0.6 + rnd() * 0.6), sz = s * (0.8 + rnd() * 0.4);
+    if (pathDist(x, z) < Math.max(s, sz) + 0.5) {
+      // the gorge trail south was cut through here: leave the boulder out, but spend the draws push() would have
+      // made (variant + yaw, and its tone below) so every other rock, pillar and pine keeps its place
+      lists[Math.floor(rnd() * 3)].push({ cleared: true });
+      rnd();
+      continue;
+    }
+    push(x, z, s, sy, sz);
   }
   // rubble at the foot of the cliff
   for (let i = 0; i < 22; i++) {
@@ -108,21 +190,27 @@ export function createRocks() {
   const med = lists[0][lists[0].length - 1];
   med.y = -0.2;
   med.a = 0.6;
+  med.stand = true;
   const medY = med.y;
 
   const dummy = new THREE.Object3D(), col = new THREE.Color();
   const tones = ['#7fa39b', '#62908c', '#8fae9e', '#557f86'];
   lists.forEach((list, v) => {
     if (!list.length) return;
-    const im = new THREE.InstancedMesh(rockGeometry(v + 1, 2), mat, list.length);
-    list.forEach((r, i) => {
+    const im = new THREE.InstancedMesh(rockGeometry(v + 1, 2), mat, list.filter((r) => !r.cleared).length);
+    let i = 0;
+    for (const r of list) {
+      const tone = tones[Math.floor(rnd() * tones.length)]; // drawn for cleared rocks too, so the rest keep their colours
+      if (r.cleared) continue;
       dummy.position.set(r.x, r.y, r.z);
       dummy.rotation.set(0, r.a, 0);
       dummy.scale.set(r.sx, r.sy, r.sz);
       dummy.updateMatrix();
       im.setMatrixAt(i, dummy.matrix);
-      im.setColorAt(i, col.set(tones[Math.floor(rnd() * tones.length)]));
-    });
+      im.setColorAt(i++, col.set(tone));
+      if (r.stand) standOn(im.geometry, r);
+      else if (r.col) fitCollider(im.geometry, r, r.col);
+    }
     im.castShadow = im.receiveShadow = true;
     im.frustumCulled = false;
     group.add(im);
@@ -191,7 +279,8 @@ export function createProps() {
     const red = '#d6432c', dark = '#2a2326', cap = '#3a3136';
     const parts = [];
     for (const s of [-1, 1]) {
-      parts.push({ geometry: cyl(0.25, 0.3, 5.3, 12), matrix: M4(s * 2.5, 2.65, 0, 0, 0, s * -0.035), color: red });
+      // pillars lean in at the top: a positive rz tips the top toward -x, so the feet splay out to the base collars
+      parts.push({ geometry: cyl(0.25, 0.3, 5.3, 12), matrix: M4(s * 2.5, 2.65, 0, 0, 0, s * 0.035), color: red });
       parts.push({ geometry: cyl(0.4, 0.44, 0.5, 12), matrix: M4(s * 2.58, 0.25, 0), color: dark });
     }
     parts.push({ geometry: box(6.6, 0.34, 0.34), matrix: M4(0, 4.05, 0), color: red }); // nuki
@@ -210,29 +299,39 @@ export function createProps() {
     for (const s of [-1, 1]) colliders.push({ x: x + Math.cos(0.16) * s * 2.55, z: z - Math.sin(0.16) * s * 2.55, r: 0.45 });
   }
 
-  // stone lanterns along the path
-  const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 1.9, 0.7) });
+  // stone lanterns along the meadow path, walked from the training ground to the torii: a pair flanking the approach
+  // to the torii, one on the outside of the path's bend, one across the path from the training post. Each stands on
+  // the verge with a window turned to the path, and its flame is one of the sources the pooled lamps can light.
+  // the same carved lantern the zones use (world/kit/build.js), its windows papered with lantern paper that is plain
+  // by day and glows at night
   const stone = '#9aa39a', stoneD = '#7e8983';
-  const lantern = mergeColored([
-    { geometry: cyl(0.42, 0.5, 0.22, 6), matrix: M4(0, 0.11, 0), color: stoneD },
-    { geometry: cyl(0.14, 0.17, 0.95, 6), matrix: M4(0, 0.68, 0), color: stone },
-    { geometry: cyl(0.36, 0.2, 0.16, 6), matrix: M4(0, 1.22, 0), color: stoneD },
-    { geometry: box(0.44, 0.42, 0.44), matrix: M4(0, 1.5, 0), color: stone },
-    { geometry: new THREE.ConeGeometry(0.62, 0.38, 6), matrix: M4(0, 1.9, 0), color: stoneD },
-    { geometry: new THREE.SphereGeometry(0.1, 8, 6), matrix: M4(0, 2.14, 0), color: stone },
-  ]);
-  const lanternSpots = [[-13.2, 21.5], [-9.8, 10.2], [-6.2, -8.6], [-18.4, 26.5]];
-  for (const [x, z] of lanternSpots) {
-    const y = heightAt(x, z) - 0.05;
-    const m = new THREE.Mesh(lantern, patchMaterial(toon.clone(), { key: 'lantern', fHead: GLSL_PAINT, fColor: 'diffuseColor.rgb *= 0.7 + 0.5 * paintTri(vWPos, vWNrm, 0.9);' }));
+  const LP = new Parts();
+  lanternBody(LP, stone, stoneD);
+  const lantern = mergeKit(LP.list);
+  const walk = [...MEADOW_PATH].reverse(), W = MEADOW_PATH_W, gap = 1.15;
+  const lanternSpots = [beside(walk, W, 33.5, 1, gap), beside(walk, W, 33.5, -1, gap), beside(walk, W, 19, 1, gap), beside(walk, W, 2.5, -1, gap)];
+  const lights = [];
+  const lanternMat = patchMaterial(toon.clone(), { key: 'lantern', fHead: GLSL_PAINT, fColor: 'diffuseColor.rgb *= 0.7 + 0.5 * paintTri(vWPos, vWNrm, 0.9);' });
+  for (const { x, z, rot } of lanternSpots) {
+    // stand level on the meadow's slope: tucked a little into the uphill side, and where the ground falls away under
+    // the base a cut-stone footing (set in below the lowest ground) carries it, so no edge hangs in the air
+    let lo = heightAt(x, z), hi = lo;
+    for (let i = 0; i < 16; i++) for (const f of [0.55, 1]) { const a = (i / 16) * 6.283, h = heightAt(x + Math.sin(a) * 0.62 * f, z + Math.cos(a) * 0.62 * f); lo = Math.min(lo, h); hi = Math.max(hi, h); }
+    const y = Math.max(lo, hi - 0.16) - 0.05;
+    if (y + 0.05 - lo > 0.04) {
+      const fh = 0.3 + (y + 0.05 - lo), foot = new THREE.Mesh(mergeColored([{ geometry: cyl(0.58, 0.62, fh, 6), matrix: M4(0, 0, 0), color: '#748079' }]), lanternMat);
+      foot.position.set(x, y + 0.02 - fh / 2, z);
+      foot.rotation.y = rot;
+      foot.castShadow = foot.receiveShadow = true;
+      group.add(foot);
+    }
+    const m = new THREE.Mesh(lantern, kitMaterial());
     m.position.set(x, y, z);
+    m.rotation.y = rot;
     m.castShadow = m.receiveShadow = true;
-    const g = new THREE.Mesh(box(0.3, 0.26, 0.46), glow);
-    g.position.set(x, y + 1.5, z);
-    const g2 = new THREE.Mesh(box(0.46, 0.26, 0.3), glow);
-    g2.position.copy(g.position);
-    group.add(m, g, g2);
+    group.add(m);
     colliders.push({ x, z, r: 0.5 });
+    lights.push({ x, y: y + FIREBOX_Y, z, i: 0.8 });
   }
 
   // training post (makiwara): a straw-wrapped target the samurai practises on
@@ -255,6 +354,6 @@ export function createProps() {
     group.add(post);
     colliders.push({ x, z, r: 0.34 });
   }
-  return { group, colliders, post };
+  return { group, colliders, post, lights };
 }
 export { lerp };

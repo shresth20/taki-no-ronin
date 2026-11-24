@@ -245,6 +245,20 @@ export function createJourney(scene) {
       resetGates();
       publish();
     },
+    /** dev jump (?dev=1): the road up to a point has been walked. Exactly these fights are won and these lands seen,
+        so jumping back down the road makes the later fights fresh again. */
+    devPrepare(plan) {
+      this.abort();
+      S.cleared = [...plan.clear];
+      S.seen = Array.from({ length: plan.zone + 1 }, (_, i) => i);
+      S.trained = true;
+      S.checkpoint = plan.checkpoint;
+      zone = plan.zone; // already standing in it: no zone card or reveal on the first frame
+      zoneT = 0;
+      cpLit.clear();
+      resetGates();
+      save();
+    },
   };
   return J;
 }

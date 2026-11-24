@@ -384,7 +384,8 @@ const VARIANTS = {
   lord: { palette: 'lord', haori: true, kote: true, sode: true, cuirass: true, mask: true, hat: 'kabuto', scarf: true, weapon: 'odachi', scale: 1.34 },
 };
 
-export function buildCharacter(kind) {
+/** `grow` enlarges the variant's own scale (bosses get bigger with each level) */
+export function buildCharacter(kind, grow = 1) {
   const o = VARIANTS[kind];
   const P = { ...PALETTES[o.palette] };
   P.eyeGlow = new THREE.Color(P.eye).multiplyScalar(3.2); // HDR so masked eyes bloom
@@ -415,7 +416,7 @@ export function buildCharacter(kind) {
   const pivot = new THREE.Group(); // lets the whole body tumble (dodge roll, knockdown)
   root.add(pivot);
   pivot.add(mesh, outline);
-  const scale = o.scale ?? 1;
+  const scale = (o.scale ?? 1) * grow;
   pivot.scale.setScalar(scale);
 
   // weapon in the right hand: blade along the hand's +Y, edge toward +Z

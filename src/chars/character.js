@@ -2,19 +2,20 @@ import * as THREE from 'three';
 import { buildCharacter } from './rig.js';
 import { Animator, Pose, sampleClip } from './animator.js';
 import { PLAYER_CLIPS, ENEMY_CLIPS, locoPlayer, locoEnemy, locoCalm } from './poses.js';
-import { getToonRamp, clamp } from '../core/util.js';
-import { groundAt as heightAt } from '../world/nav.js';
+import { getToonRamp, clamp, saturate } from '../core/util.js';
+import { groundAt as heightAt, bodyGroundAt } from '../world/nav.js';
 import { ENV } from '../world/env.js';
 
 /* ---------- verlet ribbons: scarf tails, headband, ponytail ---------- */
 const _t = new THREE.Vector3(), _s = new THREE.Vector3(), _n = new THREE.Vector3(), _ax = new THREE.Vector3(), _d = new THREE.Vector3(), _w = new THREE.Vector3();
 class Ribbon {
-  constructor(node, local, { n = 8, seg = 0.1, width = 0.07, taper = 0.4, color = 0xcc2233, cross = false, gravity = -7, drag = 0.93, lift = 0 }) {
+  constructor(node, local, { n = 8, seg = 0.1, width = 0.07, taper = 0.4, color = 0xcc2233, cross = false, gravity = -7, drag = 0.93, lift = 0, size = 1 }) {
     this.node = node;
     this.local = local;
     this.n = n;
-    this.seg = seg;
-    this.width = width;
+    this.seg = seg * size;
+    this.width = width * size;
+    this.size = size; // grows the cloth and its keep-out radii with an enlarged wearer
     this.taper = taper;
     this.cross = cross;
     this.gravity = gravity;
@@ -73,11 +74,11 @@ class Ribbon {
           // keep out of the torso and above the ground
           _d.subVectors(p[i], body);
           _d.y *= 0.55;
-          const bl = _d.length();
-          if (bl < 0.2) { _d.y /= 0.55; p[i].addScaledVector(_d.normalize(), 0.2 - bl); }
+          const bl = _d.length(), bR = 0.2 * this.size, hR = 0.17 * this.size;
+          if (bl < bR) { _d.y /= 0.55; p[i].addScaledVector(_d.normalize(), bR - bl); }
           _d.subVectors(p[i], head);
           const hl = _d.length();
-          if (hl < 0.17 && i > 1) p[i].addScaledVector(_d.normalize(), 0.17 - hl);
+          if (hl < hR && i > 1) p[i].addScaledVector(_d.normalize(), hR - hl);
           const gy = heightAt(p[i].x, p[i].z) + 0.03;
           if (p[i].y < gy) p[i].y = gy;
         }
@@ -115,10 +116,10 @@ let SEED = 1;
 
 /** A character = rig + animator + cloth. Gameplay code drives pos/yaw and picks clips. */
 export class Character {
-  constructor(kind, scene) {
+  constructor(kind, scene, grow = 1) {
     this.kind = kind;
     this.isPlayer = kind === 'ronin';
-    this.rig = buildCharacter(kind);
+    this.rig = buildCharacter(kind, grow);
     this.anim = new Animator(this.rig);
     this.root = this.rig.root;
     this.pos = this.root.position;
@@ -141,6 +142,14 @@ export class Character {
     this.lean = 0; // sideways lie (death)
     this.flash = 0;
     this.dissolve = 0;
+    // feet on the ground: gameplay sets footY (the height of the ground the root stands on) and footIK (1 standing or
+    // walking, 0 in the air); each foot then finds the ground under itself (a tread, a stone, a slope)
+    this.footY = null;
+    this.footIK = 0;
+    this.ikW = 0;
+    // a foot carrying weight keeps the ground it landed on until it lifts again (a planted foot doesn't drop a tread
+    // because the body has moved on over it)
+    this.plant = [{ on: false, g: 0, x: 0, z: 0 }, { on: false, g: 0, x: 0, z: 0 }];
     if (spear) this.anim.gripOffset = 0.5;
     scene.add(this.root);
 
@@ -148,7 +157,7 @@ export class Character {
     const b = this.rig.bones, P = this.rig.palette;
     this.ribbons = [];
     const add = (node, local, o) => {
-      const r = new Ribbon(node, local, o);
+      const r = new Ribbon(node, local, { ...o, size: grow });
       scene.add(r.mesh);
       this.ribbons.push(r);
     };
@@ -217,6 +226,7 @@ export class Character {
         A.stiff = c.stiff ?? 24;
       }
     }
+    this.footContact(dt);
     A.update(dt);
     this.applyTransform();
     this.updateCloth(dt);
@@ -224,6 +234,38 @@ export class Character {
     u.uFlash.value = this.flash;
     u.uDissolve.value = this.dissolve;
     this.flash = Math.max(0, this.flash - dt * 7);
+  }
+  /** foot IK: lift or lower each foot onto the ground under it, and bring the hips down when one foot has to reach
+      lower than the root (a foot on the next tread down, or off the edge of a stone) */
+  footContact(dt) {
+    const ik = this.anim.ik, A = this.anim.cur;
+    const want = this.footY !== null && this.roll === 0 && this.lean === 0 ? this.footIK : 0;
+    this.ikW = want > this.ikW ? Math.min(want, this.ikW + dt * 6) : Math.max(want, this.ikW - dt * 10);
+    let l = 0, r = 0, lean = 0;
+    if (this.ikW > 0) {
+      const k = this.scale, cy = Math.cos(this.yaw), sy = Math.sin(this.yaw), base = this.footY, px = this.pos.x, pz = this.pos.z;
+      const at = (f, P) => {
+        const x = px + (f.x * cy + f.z * sy) * k, z = pz + (-f.x * sy + f.z * cy) * k;
+        // planted: keep the ground it landed on, unless it has slid well off it (knocked back, turned on the spot)
+        if (f.y < 0.02) {
+          if (!P.on || Math.hypot(x - P.x, z - P.z) > 0.3) { P.on = true; P.g = heightAt(x, z); P.x = x; P.z = z; }
+        } else P.on = false;
+        const g = P.on ? P.g : heightAt(x, z);
+        return clamp(g - base, -0.5, 0.5) / k;
+      };
+      l = at(A.lFoot, this.plant[0]) * this.ikW;
+      r = at(A.rFoot, this.plant[1]) * this.ikW;
+      // lean into a climb, sit back a little going down: the slope of the ground ahead, as much as the body is moving
+      const fx = Math.sin(this.yaw) * 0.6, fz = Math.cos(this.yaw) * 0.6;
+      const slope = (bodyGroundAt(px + fx, pz + fz) - bodyGroundAt(px - fx, pz - fz)) / 1.2;
+      lean = clamp(slope, -0.7, 0.9) * (slope > 0 ? 0.3 : 0.18) * saturate(this.loco.speed / 3) * this.ikW;
+    } else this.plant[0].on = this.plant[1].on = false;
+    // ease, quicker going up than settling down, so a foot never lags into a step it is climbing
+    const ease = (cur, to, up, down) => cur + (to - cur) * (1 - Math.exp(-dt * (to > cur ? up : down)));
+    ik.l = ease(ik.l, l, 30, 18);
+    ik.r = ease(ik.r, r, 30, 18);
+    ik.hips = Math.max(0, -Math.min(ik.l, ik.r, 0));
+    ik.lean = ease(ik.lean, lean, 6, 6);
   }
   applyTransform() {
     const { root, pivot, bones, weapon } = this.rig;

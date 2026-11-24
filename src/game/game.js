@@ -1,6 +1,7 @@
 import { G, QUALITY, ui, getUI } from '../core/state.js';
 import { input, bindInput } from '../core/input.js';
 import { createPhysics } from '../core/physics.js';
+import { steer } from './pathing.js';
 import { createAudio } from '../core/audio.js';
 import { createWorld } from '../world/index.js';
 import { ENV, zoneMix } from '../world/env.js';
@@ -11,9 +12,11 @@ import { createJourney } from './journey.js';
 import { Character } from '../chars/character.js';
 import { createVfx } from '../vfx/vfx.js';
 import { Player } from './player.js';
-import { CameraRig } from './camera.js';
+import { TYPES } from './enemy.js';
+import { CameraRig, addViewBlockers, removeViewBlockers } from './camera.js';
 import { createCombat } from './combat.js';
 import { createDirector } from './director.js';
+import { planJump } from './devjump.js';
 import { damp } from '../core/util.js';
 
 const ORDER = ['low', 'medium', 'high'];
@@ -52,8 +55,8 @@ export class Game {
     G.physics = await createPhysics(world.colliders);
     ui({ physics: G.physics.name });
     // each streamed zone brings its own solid footprints and takes them away again
-    world.onZoneLoad((h) => { h.phys = G.physics.addStatics(h.solids); });
-    world.onZoneUnload((h) => { if (h.phys) G.physics.removeStatics(h.phys); h.phys = null; });
+    world.onZoneLoad((h) => { h.phys = G.physics.addStatics(h.solids); h.view = addViewBlockers(h.solids); });
+    world.onZoneUnload((h) => { if (h.phys) G.physics.removeStatics(h.phys); h.phys = null; removeViewBlockers(h.view); h.view = null; });
     G.vfx = createVfx(scene);
     G.audio = createAudio();
     G.rig = new CameraRig(camera);
@@ -76,8 +79,12 @@ export class Game {
       else if (start === 'road') { G.journey.reset(false); G.director.endDeparture(); }
       else if (q.get('zone') !== null) { G.journey.reset(false); G.director.debugJump(Number(q.get('zone'))); }
       if (q.get('at')) { const [x, z] = q.get('at').split(',').map(Number); G.player.place(x, z, G.player.yaw); G.rig.snapBehind(); }
+      // tester jump straight from the URL, same as clicking that point on the ?dev=1 map: &jump=x,z
+      if (q.get('jump')) { const [x, z] = q.get('jump').split(',').map(Number); G.director.devTeleport(planJump(x, z)); }
     }
+    if (G.dev || G.test) window.__jump = (x, z, skipHere = false) => { const p = planJump(x, z, { skipHere }); G.director.devTeleport(p); return p; };
     if (G.test) window.__route = ZONES.flatMap((z) => z.route);
+    if (G.test) window.__steer = steer; // the way round obstacles a body would take (game/pathing.js), for test bots
     if (G.test) {
       // test hooks: fixed camera and direct placement
       window.__cam = (pos, look) => { this.debugCam = pos ? { pos, look } : null; };
@@ -207,7 +214,7 @@ export class Game {
     G.player.char.setVisible(false);
     const ang = (Number(q.get('ang') || 0) * Math.PI) / 180;
     for (let i = 0; i < n; i++) {
-      const c = new Character(kind, scene);
+      const c = new Character(kind, scene, TYPES[kind]?.grow ?? 1); // bosses at their in-fight size
       const x = ARENA.x + (i - (n - 1) / 2) * Number(q.get('gap') || 1.5), z = ARENA.z;
       c.pos.set(x, heightAt(x, z), z);
       c.yaw = ang;
